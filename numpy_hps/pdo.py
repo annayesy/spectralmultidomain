@@ -1,6 +1,4 @@
 import numpy as np
-import numpy as np
-import numpy as np
 
 def const(c=1):
     """
@@ -17,7 +15,7 @@ def const(c=1):
         return c * np.ones(xxloc.shape[0],)
     return const_func
 
-class PDO_2d:
+class PDO:
     """
     Represents a 2-dimensional Partial Differential Operator (PDO) with coefficients for the PDE terms.
     

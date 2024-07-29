@@ -46,28 +46,6 @@ def diag_mult(diag,M):
     """
     return (diag * M.T).T
 
-def get_loc_interp(x_cheb, x_cheb_nocorners, q):
-    """
-    Computes local interpolation matrices from Chebyshev points.
-    
-    Parameters:
-    - x_cheb: Chebyshev points including corner points
-    - x_cheb_nocorners: Chebyshev points excluding corner points
-    - q: The degree of the polynomial for interpolation
-    
-    Returns:
-    - Interp_loc: Local interpolation matrix
-    - err: Norm of the interpolation error
-    - cond: Condition number of the interpolation matrix
-    """
-    Vpoly_cheb = cheb_py.chebvander(x_cheb,q)
-    Vpoly_nocorner = cheb_py.chebvander(x_cheb_nocorners,q)
-
-    Interp_loc = np.linalg.lstsq(Vpoly_nocorner.T,Vpoly_cheb.T,rcond=None)[0].T
-    err  = np.linalg.norm(Interp_loc @ Vpoly_nocorner - Vpoly_cheb)
-    cond = np.linalg.cond(Interp_loc) 
-    return Interp_loc,err,cond
-
 
 #################################### 2D discretization ##########################################
 
@@ -142,7 +120,6 @@ class Patch:
         """
         self._discretize(a,p,d=2)
         self.a = a; self.p = p; self.d = 2
-        self._get_interp_mat()
         
     def _discretize(self,a,p,d):
         assert d == 2
