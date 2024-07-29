@@ -8,7 +8,7 @@ setup(
     license="MIT",
     author="Anna Yesypenko",
     author_email='annayesy@utexas.edu',
-    url='https://github.com/annayesy/hpsmultidomaindisc.py',
+    url='https://github.com/annayesy/hpsmultidomain2d.py',
     install_requires=[
         'numpy','matplotlib','scipy',
     ],
