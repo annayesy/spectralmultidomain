@@ -1,9 +1,10 @@
 import numpy as np
-from numpy_hps.hps_patch import Patch
 import matplotlib.pyplot as plt
 from scipy.special import j0
-from numpy_hps.pdo import PDO2d,const
-from numpy_hps.hps_leaf_ops import get_Aloc
+
+from hps2d.pdo import PDO2d,const
+from hps2d.hps_leaf_ops import get_Aloc
+from hps2d.hps_patch import Patch
 
 def get_known_greens(xx,kh):
 	ddsq     = np.multiply(xx[:,0]-3,xx[:,0]-3) \
