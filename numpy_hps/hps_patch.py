@@ -33,19 +33,6 @@ def cheb(p):
     D = D - np.diag(np.sum(D,axis=1))
     return D,x
 
-def diag_mult(diag,M):
-    """
-    Performs multiplication of a diagonal matrix (represented by a vector) with a matrix.
-    
-    Parameters:
-    - diag: A vector representing the diagonal of a diagonal matrix
-    - M: A matrix to be multiplied
-    
-    Returns:
-    - The result of the diagonal matrix multiplied by M
-    """
-    return (diag * M.T).T
-
 
 #################################### 2D discretization ##########################################
 
@@ -123,6 +110,6 @@ class Patch:
         
     def _discretize(self,a,p,d):
         assert d == 2
-        self.zz,self.Ds,self.JJ,self.hmin = leaf_discretization_2d(a,p)
-
+        zz_tmp,self.Ds,self.JJ,self.hmin = leaf_discretization_2d(a,p)
+        self.zz = zz_tmp.T
         self.Nx = get_diff_ops(self.Ds,self.JJ,d)
