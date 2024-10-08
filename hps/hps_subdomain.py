@@ -44,8 +44,8 @@ class LeafSubdomain:
 
     def __init__(self,box_geom,pdo,patch_utils):
 
-        lim_max = box_geom[:,1]
-        lim_min = box_geom[:,0]
+        lim_max = box_geom[1]
+        lim_min = box_geom[0]
 
         box_len = lim_max - lim_min
         c       = box_len * 0.5 + lim_min

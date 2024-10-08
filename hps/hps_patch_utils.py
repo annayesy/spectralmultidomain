@@ -10,7 +10,7 @@ import scipy.linalg
 # Define named tuples for storing partial differential operators (PDOs) and differential schemes (Ds)
 # for both 2D and 3D problems, along with indices (JJ) for domain decomposition.
 Ds_2d    = namedtuple('Ds_2d', ['D11','D22','D12','D1','D2'])
-JJ_2d    = namedtuple('JJ_2d', ['Jl','Jr','Jd','Ju','Jx','Jc','Jxreorder'])
+JJ_2d    = namedtuple('JJ_2d', ['Jl','Jr','Jd','Ju','Jx','Jc'])
 
 def cheb(p):
     """
@@ -72,17 +72,8 @@ def leaf_discretization_2d(a,p):
     Jc    = Jc.copy().reshape((p-2)**2,)
     Jx    = np.concatenate((Jl,Jr,Jd,Ju))
     
-    Jcorner = np.setdiff1d(np.arange(p**2),np.hstack((Jc,Jx)))
-    
-    Jl_corner = np.hstack((Jcorner[0],   Jl))
-    Ju_corner = np.hstack((Jcorner[0+1], Ju))
-    Jr_corner = np.hstack((Jcorner[0+3], np.flip(Jr,0)))
-    Jd_corner = np.hstack((Jcorner[0+2], np.flip(Jd,0)))
-    
-    Jxreorder = np.hstack((Jl_corner,Ju_corner,Jr_corner,Jd_corner))
-    
     JJ    = JJ_2d(Jl= Jl, Jr= Jr, Ju= Ju, Jd= Jd, 
-             Jx= Jx, Jc= Jc, Jxreorder=Jxreorder)
+             Jx= Jx, Jc= Jc)
     return zz,Ds,JJ,hmin
 
 def get_diff_ops(Ds,JJ,d):

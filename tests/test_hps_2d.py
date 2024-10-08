@@ -31,14 +31,20 @@ def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 	leaf_subdomain = LeafSubdomain(box_geom, pdo, patch_utils)
 
 	cond1 = leaf_subdomain.xxloc[:,0] >= box_geom[0,0] 
-	cond2 = leaf_subdomain.xxloc[:,0] <= box_geom[0,1]
-	cond3 = leaf_subdomain.xxloc[:,1] >= box_geom[1,0] 
+	cond2 = leaf_subdomain.xxloc[:,0] <= box_geom[1,0]
+	cond3 = leaf_subdomain.xxloc[:,1] >= box_geom[0,1] 
 	cond4 = leaf_subdomain.xxloc[:,1] <= box_geom[1,1]
 
 	assert np.all(cond1)
 	assert np.all(cond2)
 	assert np.all(cond3)
 	assert np.all(cond4)
+
+	if (box_geom.shape[-1] == 3):
+		cond5 = leaf_subdomain.xxloc[:,2] >= box_geom[0,2] 
+		cond6 = leaf_subdomain.xxloc[:,2] <= box_geom[1,2]
+		assert np.all(cond5)
+		assert np.all(cond6)
 
 	uu_exact = get_known_greens(leaf_subdomain.xxloc,kh)
 	uu_sol   = leaf_subdomain.solve_dir(uu_exact[leaf_subdomain.Jx])
@@ -55,18 +61,18 @@ def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 		plt.savefig('figures/leaf.pdf')
 
 	err    = uu_exact[leaf_subdomain.Jc] - uu_sol
-	relerr = np.linalg.norm(err) / np.linalg.norm(uu_exact)
+	relerr = np.linalg.norm(err) / np.linalg.norm(uu_exact[leaf_subdomain.Jc])
 	return relerr
 
 def test_laplace_patch():
 
-	box_geom = np.array([[0,1],[0,1]]); a = 0.5
+	box_geom = np.array([[0,0],[1,1]]); a = 0.5
 	p = 8
 	relerr = solve_helmholtz_on_patch(box_geom,a,p,savefig=False)
 	assert relerr < 1e-10
 
 def test_helmholtz_patch():
-	box_geom = np.array([[0.25,0.75],[0,0.5]]); a = 0.25
+	box_geom = np.array([[0.25,0],[0.75,0.5]]); a = 0.25
 	p = 18
 	relerr = solve_helmholtz_on_patch(box_geom,a,p,kh=10,savefig=True)
 	assert relerr < 1e-10
@@ -77,7 +83,7 @@ def test_convergence_plot():
 	p_range      = np.arange(8,30)
 	relerr_range = np.zeros(p_range.shape)
 
-	box_geom = np.array([[0,1],[0,1]])
+	box_geom = np.array([[0,0],[1,1]])
 
 	for (j,p) in enumerate(p_range):
 		relerr_range[j] = solve_helmholtz_on_patch(box_geom,a,p,kh)
