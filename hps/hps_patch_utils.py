@@ -96,10 +96,10 @@ def get_diff_ops(Ds,JJ,d):
 
     return Nx
 
-class Patch:
+class PatchUtils:
     def __init__(self,a,p):
         """
-        Initializes utilities associated with an HPS 2D patch.
+        Initializes utilities associated with an HPS patch.
         
         Parameters:
         - a: Half the size of the computational domain

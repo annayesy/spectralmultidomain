@@ -2,9 +2,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='hps2d',
+    name='hps',
     version='1.0',
-    packages=['hps2d'],
+    packages=['hps'],
     license="MIT",
     author="Anna Yesypenko",
     author_email='annayesy@utexas.edu',
