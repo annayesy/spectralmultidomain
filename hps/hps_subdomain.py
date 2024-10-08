@@ -18,27 +18,37 @@ def get_Aloc(pdo,xxloc,Ds):
     Returns Aloc according to the definition of the PDO at local points xxloc
     using differential operators Ds.
     """
-    assert xxloc.shape[1] == 2
 
     m = xxloc.shape[0];
     assert Ds.D11.shape[0] == m; assert Ds.D11.shape[1] == m 
+    ndim = xxloc.shape[1]; assert ndim == 2 or ndim == 3
 
     Aloc = np.zeros((m,m))
-    # accumulate Aloc according to the PDO
-
     Aloc -= diag_mult( pdo.c11(xxloc), Ds.D11)
     Aloc -= diag_mult( pdo.c22(xxloc), Ds.D22)
 
     if (pdo.c12 is not None):
         Aloc -= 2*diag_mult (pdo.c12(xxloc), Ds.D12)
+
     if (pdo.c1 is not None):
         Aloc +=   diag_mult (pdo.c1(xxloc),Ds.D1)
     if (pdo.c2 is not None):
         Aloc +=   diag_mult (pdo.c2(xxloc),Ds.D2)
     if (pdo.c is not None):
         Aloc +=   diag_mult (pdo.c(xxloc), np.eye(m))
-    return Aloc
 
+    if (ndim == 3):
+
+        Aloc -= diag_mult( pdo.c33(xxloc), Ds.D33)
+
+        if (pdo.c13 is not None):
+            Aloc -= 2*diag_mult (pdo.c13(xxloc), Ds.D13)        
+        if (pdo.c23 is not None):
+            Aloc -= 2*diag_mult (pdo.c23(xxloc), Ds.D23)
+        if (pdo.c3 is not None):
+            Aloc +=   diag_mult (pdo.c3(xxloc),Ds.D3)
+
+    return Aloc
 
 class LeafSubdomain:
 
@@ -52,6 +62,7 @@ class LeafSubdomain:
 
         assert np.abs( np.min(box_len) - 2 * patch_utils.a) < 1e-14
         assert np.abs( np.max(box_len) - 2 * patch_utils.a) < 1e-14
+        assert box_geom.shape[-1] == patch_utils.ndim
 
         self.pdo     = pdo
         self.xxloc   = patch_utils.zz + c
