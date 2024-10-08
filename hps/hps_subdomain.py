@@ -44,19 +44,23 @@ class LeafSubdomain:
 
     def __init__(self,box_geom,pdo,patch_utils):
 
-        a = patch_utils.a
-        # box_geom = [xlim_min, xlim_max,
-        #             ylim_min, ylim_max]
-        assert np.linalg.norm(box_geom - np.array([[-a,a],[-a,a]])) < 1e-12
+        lim_max = box_geom[:,1]
+        lim_min = box_geom[:,0]
+
+        box_len = lim_max - lim_min
+        c       = box_len * 0.5 + lim_min
+
+        assert np.abs( np.min(box_len) - 2 * patch_utils.a) < 1e-14
+        assert np.abs( np.max(box_len) - 2 * patch_utils.a) < 1e-14
 
         self.pdo     = pdo
-        self.xxloc   = patch_utils.zz
+        self.xxloc   = patch_utils.zz + c
         self.diff_ops= patch_utils.Ds
 
         # Jx is ordered as Jl, Jr, Jd, Ju
         self.Jx  = patch_utils.JJ.Jx
         self.Jc  = patch_utils.JJ.Jc
-        self.Nxx = patch_utils.Nx
+        self.Nx  = patch_utils.Nx
 
     @property
     def Aloc(self):
@@ -88,4 +92,4 @@ class LeafSubdomain:
 
         Axc = Aloc[self.Jx][:,self.Jc]
 
-        return self.Nxx - Axc @ np.linalg.solve(Acc,Acx)
+        return self.Nx[:,self.Jx] - self.Nx[:,self.Jc] @ np.linalg.solve(Acc,Acx)
