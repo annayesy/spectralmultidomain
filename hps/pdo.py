@@ -64,3 +64,38 @@ class PDO3d:
         self.c12, self.c13, self.c23 = c12, c13, c23
         self.c1, self.c2, self.c3    = c1, c2, c3
         self.c = c
+
+def get_known_greens(xx,kh):
+
+    """
+    Returns a Greens function on evaluated at given points.
+    """
+
+    xx_tmp = xx.copy()
+
+    if (xx.shape[-1] == 2):
+
+        xx_d0 = xx_tmp[:,0] - 10
+        xx_d1 = xx_tmp[:,1] - 10
+        ddsq  = np.multiply(xx_d0,xx_d0) + np.multiply(xx_d1,xx_d1)
+        rr    = np.sqrt(ddsq)
+
+        if (kh == 0):
+            uu_exact = np.log(rr)
+        else:
+            uu_exact = j0(kh * rr)
+    else:
+        xx_d0 = xx_tmp[:,0] - 10
+        xx_d1 = xx_tmp[:,1] - 10
+        xx_d2 = xx_tmp[:,2] - 10
+        ddsq  = np.multiply(xx_d0,xx_d0) + np.multiply(xx_d1,xx_d1) + np.multiply(xx_d2,xx_d2)
+        rr    = np.sqrt(ddsq)
+
+        if (kh == 0):
+            uu_exact = 1 / rr
+        else:
+            uu_exact = np.sin(kh * rr) / rr
+    
+    if (uu_exact.ndim == 1):
+        uu_exact = uu_exact[:,np.newaxis]
+    return uu_exact

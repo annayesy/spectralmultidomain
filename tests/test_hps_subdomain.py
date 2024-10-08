@@ -2,40 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import j0
 
-from hps.pdo             import PDO2d,PDO3d,const
+from hps.pdo             import PDO2d,PDO3d,const,get_known_greens
 from hps.hps_subdomain   import LeafSubdomain
 from hps.hps_patch_utils import PatchUtils
-
-def get_known_greens(xx,kh):
-
-	xx_tmp = xx.copy()
-
-	if (xx.shape[-1] == 2):
-
-		xx_d0 = xx_tmp[:,0] - 10
-		xx_d1 = xx_tmp[:,1] - 10
-		ddsq  = np.multiply(xx_d0,xx_d0) + np.multiply(xx_d1,xx_d1)
-		rr    = np.sqrt(ddsq)
-
-		if (kh == 0):
-			uu_exact = np.log(rr)
-		else:
-			uu_exact = j0(kh * rr)
-	else:
-		xx_d0 = xx_tmp[:,0] - 10
-		xx_d1 = xx_tmp[:,1] - 10
-		xx_d2 = xx_tmp[:,2] - 10
-		ddsq  = np.multiply(xx_d0,xx_d0) + np.multiply(xx_d1,xx_d1) + np.multiply(xx_d2,xx_d2)
-		rr    = np.sqrt(ddsq)
-
-		if (kh == 0):
-			uu_exact = 1 / rr
-		else:
-			uu_exact = np.sin(kh * rr) / rr
-	
-	if (uu_exact.ndim == 1):
-		uu_exact = uu_exact[:,np.newaxis]
-	return uu_exact
 
 def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 
