@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.special import j0
 
 from hps.pdo             import PDO2d,PDO3d,const,get_known_greens
 from hps.hps_subdomain   import LeafSubdomain
