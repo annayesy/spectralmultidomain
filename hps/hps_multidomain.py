@@ -2,6 +2,7 @@ import numpy as np
 
 from hps.hps_subdomain   import LeafSubdomain
 from hps.hps_patch_utils import PatchUtils
+from scipy.sparse        import block_diag
 
 def get_leaf_DtNs(pdo, box_geom, a, p):
 
@@ -35,7 +36,43 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
     else:
         raise ValueError
 
-    return xx_list,DtN_list
+    return npan_dim,xx_list,DtN_list
+
+def get_duplicated_interior_points_2d(p,npan_dim):
+
+    size_bnd = p-2
+    size_ext = 4*size_bnd
+
+    Icopy1 = np.zeros(np.prod(npan_dim) * size_ext, dtype=int)
+    Icopy2 = np.zeros(np.prod(npan_dim) * size_ext, dtype=int)
+    offset = 0
+
+    for j in range(npan_dim[1]):
+        for i in range(npan_dim[0]):
+
+            curr_box = i + j * npan_dim[0]
+            if (i > 0):
+                prev_box = (i-1) + j * npan_dim[0]
+
+                # right boundary of previous box
+                Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) + prev_box*size_ext + 1*size_bnd
+                # left boundary of current box
+                Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) + curr_box*size_ext + 0*size_bnd
+
+                offset += size_bnd
+
+            if (j > 0):
+                prev_box = i + (j-1) * npan_dim[0]
+
+                # up   boundary of previous box
+                Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) + prev_box*size_ext + 3*size_bnd
+                # down boundary of current box
+                Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) + curr_box*size_ext + 2*size_bnd
+
+                offset += size_bnd
+
+    return Icopy1[:offset],Icopy2[:offset]
+
 
 # HPS Multidomain class for handling multidomain discretizations
 class Multidomain:
@@ -55,6 +92,22 @@ class Multidomain:
         self.box_geom = box_geom
         self.p        = p
         self.a        = a
+        self.ndim     = box_geom.shape[-1]
 
-        self.xx_list,DtN_list = get_leaf_DtNs(pdo,box_geom,a,p)
+        self.npan_dim,xx_list,DtN_list = \
+        get_leaf_DtNs(pdo,box_geom,a,p)
+
+        self.XX   = xx_list.reshape(xx_list.shape[0] * xx_list.shape[1],self.ndim)
+        self.A    = block_diag(tuple(DtN_list),format='csr')
+
+        if  (self.ndim == 2):
+            self.Icopy1,self.Icopy2 = \
+            get_duplicated_interior_points_2d(self.p,self.npan_dim)
+        else:
+            raise ValueError
+
+        self.I_X = np.setdiff1d(np.arange(self.XX.shape[0]), \
+            np.union1d(self.Icopy1,self.Icopy2))
+
+
 
