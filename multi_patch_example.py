@@ -10,24 +10,39 @@ from scipy.linalg import block_diag
 
 from matplotlib import pyplot as plt
 
-a = 1/8; p = 10; kh = 2
+a = 1/4; p = 10; kh = 2; ndim = 3
 
-patch_utils = PatchUtils(a,p,ndim=2)
-pdo         = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
-box_geom    = np.array([[0,0],[1,1]])
+if (ndim == 2):
+	pdo         = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
+	box_geom    = np.array([[0,0],[1,1]])
+else:
+	pdo         = PDO3d(c11=const(1.0),c22=const(1.0),c33=const(1.0),c=const(-kh**2))
+	box_geom    = np.array([[0,0,0],[1,1,1]])
+
 multi       = Multidomain(pdo,box_geom,a,p)
 
 ######################################################################
 
-fig = plt.figure()
-ax  = fig.add_subplot()
+assert( np.linalg.norm (multi.XX[multi.Icopy1] - multi.XX[multi.Icopy2]) == 0)
 
-#ax.scatter(multi.XX[:,0],multi.XX[:,1])
-ax.scatter(multi.XX[multi.Icopy1,0],multi.XX[multi.Icopy1,1])
-ax.scatter(multi.XX[multi.I_X,0],multi.XX[multi.I_X,1])
+fig = plt.figure()
+ax  = fig.add_subplot() if ndim == 2 else fig.add_subplot(projection='3d')
+
+if (ndim == 2):
+
+	ax.scatter(multi.XX[multi.I_X,0],multi.XX[multi.I_X,1])
+	ax.scatter(multi.XX[multi.Icopy1,0],multi.XX[multi.Icopy1,1])
+
+else:
+	
+	ax.scatter(multi.XX[multi.I_X,0],multi.XX[multi.I_X,1],\
+		multi.XX[multi.I_X,2])
+	ax.scatter(multi.XX[multi.Icopy1,0],multi.XX[multi.Icopy1,1],\
+		multi.XX[multi.Icopy1,2])
+
 plt.savefig("multi.pdf")
 
-assert( np.linalg.norm (multi.XX[multi.Icopy1] - multi.XX[multi.Icopy2]) == 0)
+######################################################################
 
 A    = multi.A.todense()
 

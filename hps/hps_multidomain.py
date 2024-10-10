@@ -30,11 +30,30 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
                 box_loc  = np.vstack((root_loc,root_loc+2*a))
                 leaf_loc = LeafSubdomain(box_loc,pdo,patch_utils)
 
-                xx_list[i+j*npan_dim[0]]  = leaf_loc.xxloc[leaf_loc.Jx]
-                DtN_list[i+j*npan_dim[0]] = leaf_loc.DtN
+                box_ind  = i+j*npan_dim[0]
+
+                xx_list [box_ind] = leaf_loc.xxloc[leaf_loc.Jx]
+                DtN_list[box_ind] = leaf_loc.DtN
 
     else:
-        raise ValueError
+
+        for k in range(npan_dim[2]):
+            for j in range(npan_dim[1]):
+                for i in range(npan_dim[0]):
+
+                    root_loc    = np.zeros(ndim,)
+
+                    root_loc[0] = 2 * a * i + box_geom[0,0]
+                    root_loc[1] = 2 * a * j + box_geom[0,1]
+                    root_loc[2] = 2 * a * k + box_geom[0,2]
+
+                    box_loc  = np.vstack((root_loc,root_loc+2*a))
+                    leaf_loc = LeafSubdomain(box_loc,pdo,patch_utils)
+
+                    box_ind  = i + j * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
+
+                    xx_list [box_ind] = leaf_loc.xxloc[leaf_loc.Jx]
+                    DtN_list[box_ind] = leaf_loc.DtN
 
     return npan_dim,xx_list,DtN_list
 
@@ -73,6 +92,52 @@ def get_duplicated_interior_points_2d(p,npan_dim):
 
     return Icopy1[:offset],Icopy2[:offset]
 
+def get_duplicated_interior_points_3d(p,npan_dim):
+
+    size_bnd = (p-2)**2
+    size_ext = 6*size_bnd
+
+    Icopy1 = np.zeros(np.prod(npan_dim) * size_ext, dtype=int)
+    Icopy2 = np.zeros(np.prod(npan_dim) * size_ext, dtype=int)
+    offset = 0
+
+    for k in range(npan_dim[2]):
+        for j in range(npan_dim[1]):
+            for i in range(npan_dim[0]):
+
+                curr_box = i + j * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
+                if (i > 0):
+                    prev_box = (i-1) + j * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
+
+                    # right boundary of previous box
+                    Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) + prev_box*size_ext + 1*size_bnd
+                    # left boundary of current box
+                    Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) + curr_box*size_ext + 0*size_bnd
+
+                    offset += size_bnd
+
+                if (j > 0):
+                    prev_box = i + (j-1) * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
+
+                    # up   boundary of previous box
+                    Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) + prev_box*size_ext + 3*size_bnd
+                    # down boundary of current box
+                    Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) + curr_box*size_ext + 2*size_bnd
+
+                    offset += size_bnd
+
+                if (k > 0):
+                    prev_box = i + j * npan_dim[0] + (k-1) * npan_dim[0] * npan_dim[1]
+
+                    # fron boundary of previous box
+                    Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) + prev_box*size_ext + 5*size_bnd
+                    # back boundary of current box
+                    Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) + curr_box*size_ext + 4*size_bnd
+
+                    offset += size_bnd
+
+    return Icopy1[:offset],Icopy2[:offset]
+
 
 # HPS Multidomain class for handling multidomain discretizations
 class Multidomain:
@@ -103,11 +168,11 @@ class Multidomain:
         if  (self.ndim == 2):
             self.Icopy1,self.Icopy2 = \
             get_duplicated_interior_points_2d(self.p,self.npan_dim)
+        elif (self.ndim == 3):
+            self.Icopy1,self.Icopy2 = \
+            get_duplicated_interior_points_3d(self.p,self.npan_dim)
         else:
             raise ValueError
 
         self.I_X = np.setdiff1d(np.arange(self.XX.shape[0]), \
             np.union1d(self.Icopy1,self.Icopy2))
-
-
-
