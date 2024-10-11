@@ -3,6 +3,7 @@ import numpy as np
 from hps.hps_subdomain   import LeafSubdomain
 from hps.hps_patch_utils import PatchUtils
 from scipy.sparse        import block_diag
+from hps.sparse_utils    import SparseSolver, CSRBuilder
 
 def get_leaf_DtNs(pdo, box_geom, a, p):
 
@@ -138,7 +139,6 @@ def get_duplicated_interior_points_3d(p,npan_dim):
 
     return Icopy1[:offset],Icopy2[:offset]
 
-
 # HPS Multidomain class for handling multidomain discretizations
 class Multidomain:
     
@@ -159,20 +159,64 @@ class Multidomain:
         self.a        = a
         self.ndim     = box_geom.shape[-1]
 
-        self.npan_dim,xx_list,DtN_list = \
+        self.npan_dim,xx_list,self.DtN_list = \
         get_leaf_DtNs(pdo,box_geom,a,p)
 
         self.XX   = xx_list.reshape(xx_list.shape[0] * xx_list.shape[1],self.ndim)
-        self.A    = block_diag(tuple(DtN_list),format='csr')
 
         if  (self.ndim == 2):
-            self.Icopy1,self.Icopy2 = \
+            self.I_copy1,self.I_copy2 = \
             get_duplicated_interior_points_2d(self.p,self.npan_dim)
         elif (self.ndim == 3):
-            self.Icopy1,self.Icopy2 = \
+            self.I_copy1,self.I_copy2 = \
             get_duplicated_interior_points_3d(self.p,self.npan_dim)
         else:
             raise ValueError
 
         self.I_X = np.setdiff1d(np.arange(self.XX.shape[0]), \
-            np.union1d(self.Icopy1,self.Icopy2))
+            np.union1d(self.I_copy1,self.I_copy2))
+
+    def setup(self):
+
+        A    = block_diag(tuple(self.DtN_list),format='csr')
+        del self.DtN_list
+
+        #### accumulate coo matrix
+        A_CC = CSRBuilder(self.I_copy1.shape[0],\
+            self.I_copy1.shape[0],A.nnz)
+        A_CC.add_data(A[self.I_copy1][:,self.I_copy1])
+        A_CC.add_data(A[self.I_copy1][:,self.I_copy2])
+        A_CC.add_data(A[self.I_copy2][:,self.I_copy1])
+        A_CC.add_data(A[self.I_copy2][:,self.I_copy2])
+        A_CC = A_CC.tocsr()
+
+        A_CX = CSRBuilder(self.I_copy1.shape[0],\
+            self.I_X.shape[0],A.nnz)
+        A_CX.add_data(A[self.I_copy1][:,self.I_X])
+        A_CX.add_data(A[self.I_copy2][:,self.I_X])
+        A_CX = A_CX.tocsr()
+
+        A_XC = CSRBuilder(self.I_X.shape[0],\
+            self.I_copy1.shape[0],A.nnz)
+        A_XC.add_data(A[self.I_X][:,self.I_copy1])
+        A_XC.add_data(A[self.I_X][:,self.I_copy2])
+        A_XC = A_XC.tocsr()
+
+        A_XX = A[self.I_X][:,self.I_X].tocsr()
+
+        self.solver_CC = SparseSolver(A_CC)
+
+        self.A_CX  = A_CX
+        self.A_XX  = A_XX
+        self.A_XC  = A_XC
+
+    @property
+    def LU_CC(self):
+        return self.solver_CC.solve_op
+
+    def solve_dir(self,uu_dir,ff_body=None):
+
+        if (ff_body is None):
+            return self.LU_CC (- self.A_CX @ uu_dir)
+        else:
+            return self.LU_CC (ff_body - self.A_CX @ uu_dir)

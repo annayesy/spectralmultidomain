@@ -5,6 +5,7 @@ __pycache__/
 *.pdf
 # C extensions
 *.so
+*.DS_Store
 
 # Distribution / packaging
 .Python
