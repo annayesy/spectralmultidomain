@@ -103,4 +103,5 @@ class LeafSubdomain:
 
         Axc = Aloc[self.Jx][:,self.Jc]
 
-        return self.Nx[:,self.Jx] - self.Nx[:,self.Jc] @ np.linalg.solve(Acc,Acx)
+        DtN = self.Nx[:,self.Jx] - self.Nx[:,self.Jc] @ np.linalg.solve(Acc,Acx)
+        return DtN

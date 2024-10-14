@@ -8,11 +8,11 @@ from hps.hps_multidomain import Multidomain
 from time import time
 from matplotlib import pyplot as plt
 
-a = 1/4; p = 12; kh = 0; ndim = 3
+a = 1/4; p = 20; kh = 0; ndim = 2
 
 if (ndim == 2):
 	pdo         = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
-	box_geom    = np.array([[0,0],[1,1]])
+	box_geom    = np.array([[0,0],[1.0,0.5]])
 else:
 	pdo         = PDO3d(c11=const(1.0),c22=const(1.0),c33=const(1.0),c=const(-kh**2))
 	box_geom    = np.array([[0,0,0],[1,1,1]])
@@ -32,6 +32,7 @@ if (ndim == 2):
 
 	ax.scatter(multi.XX[multi.I_X,0],multi.XX[multi.I_X,1])
 	ax.scatter(multi.XX[multi.I_copy1,0],multi.XX[multi.I_copy1,1])
+	ax.set_aspect('equal','box')
 
 else:
 	
@@ -58,9 +59,4 @@ print ("Time to ( get DtNs , setup multilevel solver) = (%5.2f,%5.2f) s" % \
 	(toc_dtn,toc_setup))
 print("Relative error %2.5e" % relerr)
 
-nX  = multi.A_XX.shape[0]
-DtN = multi.DtN_fastop(np.eye(nX))
-
-Omega = np.random.rand(nX,10)
-err = multi.DtN_fastop.rmatmat(Omega) - DtN.T @ Omega
-assert np.linalg.norm(err,ord=2) < 1e-11
+print("Condition number of ACC %5.2f" % np.linalg.cond(multi.A_CC.todense()))

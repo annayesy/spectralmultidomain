@@ -191,25 +191,9 @@ class Multidomain:
         A_CC.add_data(A[self.I_copy2][:,self.I_copy2])
         A_CC = A_CC.tocsr()
 
-        A_CX = CSRBuilder(self.I_copy1.shape[0],\
-            self.I_X.shape[0],A.nnz)
-        A_CX.add_data(A[self.I_copy1][:,self.I_X])
-        A_CX.add_data(A[self.I_copy2][:,self.I_X])
-        A_CX = A_CX.tocsr()
-
-        A_XC = CSRBuilder(self.I_X.shape[0],\
-            self.I_copy1.shape[0],A.nnz)
-        A_XC.add_data(A[self.I_X][:,self.I_copy1])
-        A_XC.add_data(A[self.I_X][:,self.I_copy2])
-        A_XC = A_XC.tocsr()
-
-        A_XX = A[self.I_X][:,self.I_X].tocsr()
-
         self.solver_CC = SparseSolver(A_CC)
-
-        self.A_CX  = A_CX
-        self.A_XX  = A_XX
-        self.A_XC  = A_XC
+        self.A_CC      = A_CC
+        self.A         = A
 
     @property
     def LU_CC(self):
@@ -217,42 +201,12 @@ class Multidomain:
 
     def solve_dir(self,uu_dir,ff_body=None):
 
+        def apply_ACX(vec):
+            result  = self.A[self.I_copy1][:,self.I_X] @ vec
+            result += self.A[self.I_copy2][:,self.I_X] @ vec
+            return result
+
         if (ff_body is None):
-            return self.LU_CC (- self.A_CX @ uu_dir)
+            return self.LU_CC (- apply_ACX (uu_dir) )
         else:
-            return self.LU_CC (ff_body - self.A_CX @ uu_dir)
-
-    @property
-    def DtN_fastop(self):
-
-        nX = self.I_X.shape[0]
-
-        def matmat(v):
-
-            if (v.ndim == 1):
-                v_tmp = v[:,np.newaxis]
-            else:
-                v_tmp = v
-
-            result  = self.A_XX @ v_tmp
-            result -= self.A_XC @ self.LU_CC.matmat (self.A_CX @ v_tmp)
-
-            if (v.ndim == 1):
-                result = result.flatten()
-            return result
-
-        def rmatmat(v):
-            if (v.ndim == 1):
-                v_tmp = v[:,np.newaxis]
-            else:
-                v_tmp = v
-            
-            result  = self.A_XX.T @ v_tmp
-            result -= self.A_CX.T @ self.LU_CC.rmatmat(self.A_XC.T @ v_tmp)
-            if (v.ndim == 1):
-                result = result.flatten()
-            return result
-
-        return LinearOperator(shape=(nX,nX),\
-            matvec = matmat, matmat = matmat,\
-            rmatvec=rmatmat, rmatmat=rmatmat)
+            return self.LU_CC (ff_body - apply_ACX(uu_dir) )
