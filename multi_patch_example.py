@@ -8,7 +8,7 @@ from hps.hps_multidomain import Multidomain
 from time import time
 from matplotlib import pyplot as plt
 
-a = 1/16; p = 10; kh = 2; ndim = 3
+a = 1/4; p = 12; kh = 0; ndim = 3
 
 if (ndim == 2):
 	pdo         = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
@@ -57,3 +57,10 @@ print ("Multi-npans",multi.npan_dim, "p=%d"%multi.p)
 print ("Time to ( get DtNs , setup multilevel solver) = (%5.2f,%5.2f) s" % \
 	(toc_dtn,toc_setup))
 print("Relative error %2.5e" % relerr)
+
+nX  = multi.A_XX.shape[0]
+DtN = multi.DtN_fastop(np.eye(nX))
+
+Omega = np.random.rand(nX,10)
+err = multi.DtN_fastop.rmatmat(Omega) - DtN.T @ Omega
+assert np.linalg.norm(err,ord=2) < 1e-11

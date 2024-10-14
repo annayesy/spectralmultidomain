@@ -60,7 +60,7 @@ class SparseSolver:
 	def __init__(self,A):
 
 		v                 = np.random.rand(A.shape[0],)
-		self.is_symmetric = np.linalg.norm(A @ v - A.conj().T @ v) < 1e-12
+		self.is_symmetric = np.linalg.norm(A @ v - A.T @ v) < 1e-12
 		self.N            = A.shape[0]
 
 		self.use_petsc    = petsc_imported
@@ -71,7 +71,7 @@ class SparseSolver:
 			if (not self.is_symmetric):
 				# on some installations of petsc
 				# there are issues with transpose matsolve
-				self.ksp_adj = setup_ksp(A.conj().T)
+				self.ksp_adj = setup_ksp(A.T)
 		else:
 			self.ksp = splu(A.tocsc())
 
@@ -85,6 +85,7 @@ class SparseSolver:
 				rmatvec=get_vecsolve(self.ksp),\
 				matmat =get_matsolve(self.ksp),\
 				rmatmat=get_matsolve(self.ksp))
+			
 		elif (self.use_petsc and not self.is_symmetric):
 
 			return LinearOperator(shape=(self.N,self.N),\

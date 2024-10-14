@@ -247,12 +247,12 @@ class Multidomain:
             else:
                 v_tmp = v
             
-            result  = self.A_XX.conj().T @ v_tmp
-            result -= self.A_CX.conj().T @ self.LU_CC.rmatmat(self.A_XC.conj().T @ v_tmp)
+            result  = self.A_XX.T @ v_tmp
+            result -= self.A_CX.T @ self.LU_CC.rmatmat(self.A_XC.T @ v_tmp)
             if (v.ndim == 1):
                 result = result.flatten()
             return result
 
         return LinearOperator(shape=(nX,nX),\
-            matvec = matmat, matmat=matmat,\
+            matvec = matmat, matmat = matmat,\
             rmatvec=rmatmat, rmatmat=rmatmat)
