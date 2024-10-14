@@ -4,6 +4,7 @@ from hps.hps_subdomain   import LeafSubdomain
 from hps.hps_patch_utils import PatchUtils
 from scipy.sparse        import block_diag
 from hps.sparse_utils    import SparseSolver, CSRBuilder
+from scipy.sparse.linalg import LinearOperator
 
 def get_leaf_DtNs(pdo, box_geom, a, p):
 
@@ -220,3 +221,38 @@ class Multidomain:
             return self.LU_CC (- self.A_CX @ uu_dir)
         else:
             return self.LU_CC (ff_body - self.A_CX @ uu_dir)
+
+    @property
+    def DtN_fastop(self):
+
+        nX = self.I_X.shape[0]
+
+        def matmat(v):
+
+            if (v.ndim == 1):
+                v_tmp = v[:,np.newaxis]
+            else:
+                v_tmp = v
+
+            result  = self.A_XX @ v_tmp
+            result -= self.A_XC @ self.LU_CC.matmat (self.A_CX @ v_tmp)
+
+            if (v.ndim == 1):
+                result = result.flatten()
+            return result
+
+        def rmatmat(v):
+            if (v.ndim == 1):
+                v_tmp = v[:,np.newaxis]
+            else:
+                v_tmp = v
+            
+            result  = self.A_XX.conj().T @ v_tmp
+            result -= self.A_CX.conj().T @ self.LU_CC.rmatmat(self.A_XC.conj().T @ v_tmp)
+            if (v.ndim == 1):
+                result = result.flatten()
+            return result
+
+        return LinearOperator(shape=(nX,nX),\
+            matvec = matmat, matmat=matmat,\
+            rmatvec=rmatmat, rmatmat=rmatmat)

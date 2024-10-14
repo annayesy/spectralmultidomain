@@ -44,16 +44,13 @@ def get_vecsolve(ksp):
 def get_matsolve(ksp):
 
 	def matsolve(B):
-		try:
-			pB = PETSc.Mat().createDense([B.shape[0],B.shape[1]],None,B)
-			pX = PETSc.Mat().createDense([B.shape[0],B.shape[1]])
-			pX.zeroEntries()
+		pB = PETSc.Mat().createDense([B.shape[0],B.shape[1]],None,B)
+		pX = PETSc.Mat().createDense([B.shape[0],B.shape[1]])
+		pX.zeroEntries()
 
-			self.LU_CC.matSolve(pB,pX)
-			result = petscdense_to_nparray(pX)
-			return result
-		except:
-			raise ValueError("on some petsc installations, matsolves cause issues")
+		ksp.matSolve(pB,pX)
+		result = petscdense_to_nparray(pX)
+		return result
 	return matsolve
 
 ######################################################################################################
