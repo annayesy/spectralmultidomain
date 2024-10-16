@@ -18,7 +18,7 @@ def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 
 	cond1 = leaf_subdomain.xxloc[:,0] >= box_geom[0,0] 
 	cond2 = leaf_subdomain.xxloc[:,0] <= box_geom[1,0]
-	cond3 = leaf_subdomain.xxloc[:,1] >= box_geom[0,1] 
+	cond3 = leaf_subdomain.xxloc[:,1] >= box_geom[0,1]
 	cond4 = leaf_subdomain.xxloc[:,1] <= box_geom[1,1]
 
 	assert np.all(cond1)
@@ -33,7 +33,7 @@ def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 		assert np.all(cond6)
 
 	uu_exact = get_known_greens(leaf_subdomain.xxloc,kh)
-	uu_sol   = leaf_subdomain.solve_dir(uu_exact[leaf_subdomain.Jx])
+	uu_sol   = leaf_subdomain.solve_impedance(uu_exact[leaf_subdomain.Jx])
 
 	if (savefig):
 

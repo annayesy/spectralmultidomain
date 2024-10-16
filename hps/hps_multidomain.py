@@ -176,8 +176,7 @@ class Multidomain:
 
         self.I_X = np.setdiff1d(np.arange(self.XX.shape[0]), \
             np.union1d(self.I_copy1,self.I_copy2))
-
-    def setup(self):
+        self.I_C = self.I_copy1
 
         A    = block_diag(tuple(self.DtN_list),format='csr')
         del self.DtN_list
@@ -191,22 +190,31 @@ class Multidomain:
         A_CC.add_data(A[self.I_copy2][:,self.I_copy2])
         A_CC = A_CC.tocsr()
 
-        self.solver_CC = SparseSolver(A_CC)
+        A_CX = CSRBuilder(self.I_copy1.shape[0],\
+            self.I_X.shape[0],A.nnz)
+        A_CX.add_data(A[self.I_copy1][:,self.I_X])
+        A_CX.add_data(A[self.I_copy2][:,self.I_X])
+        A_CX = A_CX.tocsr()
+
         self.A_CC      = A_CC
-        self.A         = A
+        self.A_CX      = A_CX
+
+    def setup_solver_CC(self,solve_op=None):
+
+        if (solve_op is None):
+            self.solve_op = SparseSolver(self.A_CC).solve_op
+        else:
+            self.solve_op = solve_op
 
     @property
-    def LU_CC(self):
-        return self.solver_CC.solve_op
+    def solver_CC(self):
+
+        if (not hasattr(self,'solve_op')):
+            self.setup_solver_CC()
+        return self.solve_op
 
     def solve_dir(self,uu_dir,ff_body=None):
-
-        def apply_ACX(vec):
-            result  = self.A[self.I_copy1][:,self.I_X] @ vec
-            result += self.A[self.I_copy2][:,self.I_X] @ vec
-            return result
-
         if (ff_body is None):
-            return self.LU_CC (- apply_ACX (uu_dir) )
+            return self.solver_CC (- self.A_CX @ uu_dir )
         else:
-            return self.LU_CC (ff_body - apply_ACX(uu_dir) )
+            return self.solver_CC (ff_body - self.A_CX @ uu_dir )

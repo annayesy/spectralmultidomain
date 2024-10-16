@@ -8,7 +8,7 @@ from hps.hps_multidomain import Multidomain
 from time import time
 from matplotlib import pyplot as plt
 
-a = 1/4; p = 20; kh = 0; ndim = 2
+a = 1/4; p = 10; kh = 0; ndim = 3
 
 if (ndim == 2):
 	pdo         = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
@@ -46,7 +46,7 @@ plt.savefig("multi.pdf")
 ######################################################################
 
 tic       = time()
-multi.setup()
+multi.setup_solver_CC()
 toc_setup = time() - tic
 
 uu      = get_known_greens(multi.XX,kh)
