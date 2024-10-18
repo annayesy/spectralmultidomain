@@ -31,8 +31,6 @@ class PDO2d:
 
     We assume the coefficients are smooth. 
     We also assume that the matrix [c11,c12; c12, c22] is positive definite in the domain to ensure ellipticity.
-    These assumptions are from the paper by Hao, Martinsson on 3D HPS.
-    See: https://users.oden.utexas.edu/~pgm/Pubs/2016_HPS_3D_final.pdf
     """
     def __init__(self, c11, c22, c12=None, c1= None, c2 = None, c = None):
         self.c11, self.c22 = c11, c22
@@ -66,18 +64,21 @@ class PDO3d:
         self.c1, self.c2, self.c3    = c1, c2, c3
         self.c = c
 
-def get_known_greens(xx,kh):
+def get_known_greens(xx,kh,center=None):
 
     """
     Returns a Greens function on evaluated at given points.
     """
 
     xx_tmp = xx.copy()
+    ndim   = xx_tmp.shape[-1]
+    if (center is None):
+        center = np.ones(ndim,)*10
 
     if (xx.shape[-1] == 2):
 
-        xx_d0 = xx_tmp[:,0] - 10
-        xx_d1 = xx_tmp[:,1] - 10
+        xx_d0 = xx_tmp[:,0] - center[0]
+        xx_d1 = xx_tmp[:,1] - center[1]
         ddsq  = np.multiply(xx_d0,xx_d0) + np.multiply(xx_d1,xx_d1)
         rr    = np.sqrt(ddsq)
 
@@ -86,9 +87,9 @@ def get_known_greens(xx,kh):
         else:
             uu_exact = j0(kh * rr)
     else:
-        xx_d0 = xx_tmp[:,0] - 10
-        xx_d1 = xx_tmp[:,1] - 10
-        xx_d2 = xx_tmp[:,2] - 10
+        xx_d0 = xx_tmp[:,0] - center[0]
+        xx_d1 = xx_tmp[:,1] - center[1]
+        xx_d2 = xx_tmp[:,2] - center[2]
         ddsq  = np.multiply(xx_d0,xx_d0) + np.multiply(xx_d1,xx_d1) + np.multiply(xx_d2,xx_d2)
         rr    = np.sqrt(ddsq)
 

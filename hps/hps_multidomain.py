@@ -3,8 +3,8 @@ import numpy as np
 from hps.hps_subdomain   import LeafSubdomain
 from hps.hps_patch_utils import PatchUtils
 from scipy.sparse        import block_diag
-from hps.sparse_utils    import SparseSolver, CSRBuilder
-from scipy.sparse.linalg import LinearOperator
+from hps.sparse_utils    import CSRBuilder
+from hps.pde_solver      import AbstractPDESolver
 
 def get_leaf_DtNs(pdo, box_geom, a, p):
 
@@ -141,7 +141,7 @@ def get_duplicated_interior_points_3d(p,npan_dim):
     return Icopy1[:offset],Icopy2[:offset]
 
 # HPS Multidomain class for handling multidomain discretizations
-class Multidomain:
+class HPSMultidomain(AbstractPDESolver):
     
     def __init__(self, pdo, box_geom, a, p):
         """
@@ -154,29 +154,25 @@ class Multidomain:
         - a (float): Characteristic length scale for the domain.
         - p (int): Polynomial degree for spectral methods or discretization parameter.
         """
-        self.pdo      = pdo
-        self.box_geom = box_geom
-        self.p        = p
-        self.a        = a
-        self.ndim     = box_geom.shape[-1]
 
-        self.npan_dim,xx_list,self.DtN_list = \
-        get_leaf_DtNs(pdo,box_geom,a,p)
+        self._box_geom = box_geom
+        self._p        = p
 
-        self.XX   = xx_list.reshape(xx_list.shape[0] * xx_list.shape[1],self.ndim)
+        self.npan_dim,xx_list,self.DtN_list = get_leaf_DtNs(pdo,self.box_geom, a, self.p)
+        self._XX = xx_list.reshape(xx_list.shape[0] * xx_list.shape[1],self.ndim)
 
         if  (self.ndim == 2):
             self.I_copy1,self.I_copy2 = \
-            get_duplicated_interior_points_2d(self.p,self.npan_dim)
+            get_duplicated_interior_points_2d(self.p, self.npan_dim)
         elif (self.ndim == 3):
             self.I_copy1,self.I_copy2 = \
-            get_duplicated_interior_points_3d(self.p,self.npan_dim)
+            get_duplicated_interior_points_3d(self.p, self.npan_dim)
         else:
             raise ValueError
 
-        self.I_X = np.setdiff1d(np.arange(self.XX.shape[0]), \
+        self.J_X = np.setdiff1d(np.arange(self.XX.shape[0]), \
             np.union1d(self.I_copy1,self.I_copy2))
-        self.I_C = self.I_copy1
+        self.J_C = self.I_copy1
 
         A    = block_diag(tuple(self.DtN_list),format='csr')
         del self.DtN_list
@@ -196,25 +192,38 @@ class Multidomain:
         A_CX.add_data(A[self.I_copy2][:,self.I_X])
         A_CX = A_CX.tocsr()
 
-        self.A_CC      = A_CC
-        self.A_CX      = A_CX
-
-    def setup_solver_CC(self,solve_op=None):
-
-        if (solve_op is None):
-            self.solve_op = SparseSolver(self.A_CC).solve_op
-        else:
-            self.solve_op = solve_op
+        self._A_CC      = A_CC
+        self._A_CX      = A_CX
 
     @property
-    def solver_CC(self):
+    def npoints_dim(self):
+        return self.npan_dim * self.p
 
-        if (not hasattr(self,'solve_op')):
-            self.setup_solver_CC()
-        return self.solve_op
+    @property
+    def box_geom(self):
+        return self._box_geom
 
-    def solve_dir(self,uu_dir,ff_body=None):
-        if (ff_body is None):
-            return self.solver_CC (- self.A_CX @ uu_dir )
-        else:
-            return self.solver_CC (ff_body - self.A_CX @ uu_dir )
+    @property
+    def XX(self):
+        return self._XX
+
+    @property
+    def I_C(self):
+        return self.J_C
+
+    @property
+    def I_X(self):
+        return self.J_X
+
+    @property
+    def A_CC(self):
+        return self._A_CC
+    
+    @property
+    def A_CX(self):
+        return self._A_CX
+
+    @property
+    def p(self):
+        return self._p
+    
