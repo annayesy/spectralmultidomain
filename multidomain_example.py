@@ -27,6 +27,26 @@ else:
 	solver    = FDDiscretization(pdo,box_geom,a)
 	toc_dtn   = time() - tic
 
+######################################################################
+
+tic       = time()
+solver.setup_solver_CC()
+toc_setup = time() - tic
+
+relerr    = solver.verify_discretization(kh)
+
+print("Ntot = %d, p=%d, kh = %5.2f" % (np.prod(solver.npoints_dim),solver.p,kh))
+print("\t Points on each dim   ",solver.npoints_dim)
+
+if (kh > 0):
+	print("\t Points per wavelength",solver.get_ppw_ndim(kh))
+
+print ("\t Time to ( get A , setup solver) = (%5.2f,%5.2f) s" % \
+	(toc_dtn,toc_setup))
+print("\t Relative error %2.5e" % relerr)
+
+######################################################################
+
 fig = plt.figure()
 ax  = fig.add_subplot() if ndim == 2 else fig.add_subplot(projection='3d')
 
@@ -45,21 +65,3 @@ else:
 	ax.set_box_aspect([1,1,1])
 
 plt.show()
-
-######################################################################
-
-tic       = time()
-solver.setup_solver_CC()
-toc_setup = time() - tic
-
-relerr    = solver.verify_discretization(kh)
-
-print("Ntot = %d, p=%d, kh = %5.2f" % (np.prod(solver.npoints_dim),solver.p,kh))
-print("\t Points on each dim   ",solver.npoints_dim)
-
-if (kh > 0):
-	print("\t Points per wavelength",solver.get_ppw_ndim(kh))
-
-print ("\t Time to ( get A , setup solver) = (%5.2f,%5.2f) s" % \
-	(toc_dtn,toc_setup))
-print("\t Relative error %2.5e" % relerr)

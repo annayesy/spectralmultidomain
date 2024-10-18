@@ -33,7 +33,7 @@ def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 		assert np.all(cond6)
 
 	uu_exact = get_known_greens(leaf_subdomain.xxloc,kh)
-	uu_sol   = leaf_subdomain.solve_impedance(uu_exact[leaf_subdomain.Jx])
+	uu_sol   = leaf_subdomain.solve_dir(uu_exact[leaf_subdomain.Jx])
 
 	if (savefig):
 
@@ -50,9 +50,11 @@ def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 		if (box_geom.shape[-1] ==2):
 			ax.scatter(XX[Jc,0], XX[Jc,1],color='tab:blue')
 			ax.scatter(XX[Jx,0], XX[Jx,1],color='tab:red')
+			ax.set_aspect('equal','box')
 		else:
 			ax.scatter(XX[Jc,0], XX[Jc,1], XX[Jc,2],color='tab:blue')
 			ax.scatter(XX[Jx,0], XX[Jx,1], XX[Jx,2],color='tab:red')
+			ax.set_box_aspect([1,1,1])
 		plt.savefig('figures/leaf_%dd.pdf' % box_geom.shape[-1])
 
 	err    = uu_exact[leaf_subdomain.Jc] - uu_sol
