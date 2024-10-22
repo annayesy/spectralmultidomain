@@ -50,6 +50,7 @@ def get_matsolve(ksp):
 
 		ksp.matSolve(pB,pX)
 		result = petscdense_to_nparray(pX)
+		pX.destroy(); pB.destroy()
 		return result
 	return matsolve
 
