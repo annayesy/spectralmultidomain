@@ -62,12 +62,15 @@ class AbstractPDESolver(metaclass=ABCMeta):
 
 	#################################################
 
-	def get_ppw_ndim(self,kh):
+	def get_nwaves_dim(self,kh):
 		nwaves_unit = kh / (2*np.pi)
 		nunits_dim  = self.box_geom[1] - self.box_geom[0]
 		nwaves_dim  = nwaves_unit * nunits_dim
 
-		ppw_ndim = self.npoints_dim / nwaves_dim
+		return nwaves_dim
+
+	def get_ppw_dim(self,kh):
+		ppw_ndim = self.npoints_dim / self.get_nwaves_dim(kh)
 		return ppw_ndim
 
 	def solve_dir(self,uu_dir):
