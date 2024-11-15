@@ -39,7 +39,7 @@ print("Ntot = %d, p=%d, kh = %5.2f" % (np.prod(solver.npoints_dim),solver.p,kh))
 print("\t Points on each dim   ",solver.npoints_dim)
 
 if (kh > 0):
-	print("\t Points per wavelength",solver.get_ppw_ndim(kh))
+	print("\t Nwaves on each dim   ",solver.get_nwaves_dim(kh))
 
 print ("\t Time to ( get A , setup solver) = (%5.2f,%5.2f) s" % \
 	(toc_dtn,toc_setup))
