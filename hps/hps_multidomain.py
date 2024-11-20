@@ -143,7 +143,7 @@ def get_duplicated_interior_points_3d(p,npan_dim):
 # HPS Multidomain class for handling multidomain discretizations
 class HPSMultidomain(AbstractPDESolver):
     
-    def __init__(self, pdo, box_geom, a, p):
+    def __init__(self, pdo, geom, a, p):
         """
         Initializes the HPS multidomain solver with domain 
         information and discretization parameters.
@@ -155,10 +155,11 @@ class HPSMultidomain(AbstractPDESolver):
         - p (int): Polynomial degree for spectral methods or discretization parameter.
         """
 
-        self._box_geom = box_geom
+        self._box_geom = geom.bounds
+        self._geom     = geom
         self._p        = p
 
-        self.npan_dim,xx_list,self.DtN_list = get_leaf_DtNs(pdo,self.box_geom, a, self.p)
+        self.npan_dim,xx_list,self.DtN_list = get_leaf_DtNs(pdo,self._box_geom, a, self.p)
         self._XX = xx_list.reshape(xx_list.shape[0] * xx_list.shape[1],self.ndim)
 
         if  (self.ndim == 2):
@@ -200,8 +201,8 @@ class HPSMultidomain(AbstractPDESolver):
         return self.npan_dim * self.p
 
     @property
-    def box_geom(self):
-        return self._box_geom
+    def geom(self):
+        return self._geom
 
     @property
     def XX(self):

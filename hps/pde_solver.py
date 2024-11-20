@@ -8,12 +8,12 @@ class AbstractPDESolver(metaclass=ABCMeta):
 	#################################################
 
 	@abstractproperty
-	def box_geom(self):
+	def geom(self):
 		pass
 
 	@property
 	def ndim(self):
-		return self.box_geom.shape[-1]
+		return self.geom.bounds.shape[-1]
 
 	#################################################
 
@@ -64,7 +64,7 @@ class AbstractPDESolver(metaclass=ABCMeta):
 
 	def get_nwaves_dim(self,kh):
 		nwaves_unit = kh / (2*np.pi)
-		nunits_dim  = self.box_geom[1] - self.box_geom[0]
+		nunits_dim  = self.geom.bounds[1] - self.geom.bounds[0]
 		nwaves_dim  = nwaves_unit * nunits_dim
 
 		return nwaves_dim
@@ -91,7 +91,7 @@ class AbstractPDESolver(metaclass=ABCMeta):
 
 	def verify_discretization(self,kh):
 
-		uu      = get_known_greens(self.XX,kh,center = self.box_geom[1]+10)
+		uu      = get_known_greens(self.XX,kh,center = self.geom.bounds[1]+10)
 		uu_sol  = self.solve_dir(uu[self.I_X])
 		uu_true = uu[self.I_C]
 
