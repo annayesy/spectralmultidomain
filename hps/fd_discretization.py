@@ -137,10 +137,11 @@ def assemble_sparse(pdo_op,npoints_dim,XX):
 # Given box geometry, generates the grid points in a rectangle.
 class FDDiscretization(AbstractPDESolver):
 
-    def __init__(self,pdo,box_geom,h,kh=0):
-        self._npoints_dim, self._XX, self.J_C, self.J_X = grid(box_geom,h)
+    def __init__(self,pdo,geom,h,kh=0):
 
-        self._box_geom = box_geom
+        self._geom = geom
+        self._npoints_dim, self._XX, self.J_C, self.J_X = grid(self.geom.bounds,h)
+
         self.pdo       = pdo
 
         self.A         = assemble_sparse(self.pdo,self.npoints_dim,self._XX)
@@ -154,8 +155,8 @@ class FDDiscretization(AbstractPDESolver):
         return 2
 
     @property
-    def box_geom(self):
-        return self._box_geom
+    def geom(self):
+        return self._geom
 
     @property
     def npoints_dim(self):

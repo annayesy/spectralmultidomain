@@ -19,8 +19,6 @@ else:
 	box         = np.array([[0,0,0],[0.5,0.5,1]])
 	geom        = BoxGeometry(box)
 
-print(geom)
-
 if (p > 2):
 
 	tic       = time()
