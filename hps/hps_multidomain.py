@@ -193,8 +193,16 @@ class HPSMultidomain(AbstractPDESolver):
         A_CX.add_data(A[self.I_copy2][:,self.I_X])
         A_CX = A_CX.tocsr()
 
+        A_XC = CSRBuilder(self.I_X.shape[0],
+            self.I_copy1.shape[0],A.nnz)
+        A_XC.add_data(A[self.I_X][:,self.I_copy1])
+        A_XC.add_data(A[self.I_X][:,self.I_copy2])
+        A_XC = A_XC.tocsr()
+
         self._A_CC      = A_CC
         self._A_CX      = A_CX
+        self._A_XC      = A_XC
+        self._A_XX      = A[self.I_X][:,self.I_X]
 
     @property
     def npoints_dim(self):
@@ -223,6 +231,14 @@ class HPSMultidomain(AbstractPDESolver):
     @property
     def A_CX(self):
         return self._A_CX
+
+    @property
+    def A_XC(self):
+        return self._A_XC
+    
+    @property
+    def A_XX(self):
+        return self._A_XX
 
     @property
     def p(self):

@@ -47,6 +47,14 @@ class AbstractPDESolver(metaclass=ABCMeta):
 	def A_CX(self):
 		pass
 
+	@abstractproperty
+	def A_XX(self):
+		pass
+
+	@abstractproperty
+	def A_XC(self):
+		pass
+
 	def setup_solver_CC(self,solve_op=None):
 		if (solve_op is None):
 			self.solve_op = SparseSolver(self.A_CC).solve_op

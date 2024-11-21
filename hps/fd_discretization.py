@@ -177,3 +177,11 @@ class FDDiscretization(AbstractPDESolver):
     @property
     def A_CX(self):
         return self.A[self.I_C][:,self.I_X]
+
+    @property
+    def A_XX(self):
+        return self.A[self.I_X][:,self.I_X]
+
+    @property
+    def A_XC(self):
+        return self.A[self.I_X][:,self.I_C]
