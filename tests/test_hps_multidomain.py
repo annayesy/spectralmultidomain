@@ -1,7 +1,7 @@
 import numpy as np
 
 from hps.pdo               import PDO2d,PDO3d,const,get_known_greens
-
+from hps.geom              import BoxGeometry
 from hps.hps_multidomain   import HPSMultidomain
 from hps.fd_discretization import FDDiscretization
 
@@ -9,15 +9,16 @@ def get_discretization_relerr(a,p,kh,ndim):
 
 	if (ndim == 2):
 		pdo         = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
-		box_geom    = np.array([[0,0],[1.0,0.5]])
+		box         = np.array([[0,0],[1.0,0.5]])
 	else:
 		pdo         = PDO3d(c11=const(1.0),c22=const(1.0),c33=const(1.0),c=const(-kh**2))
-		box_geom    = np.array([[0,0,0],[0.5,1.0,0.25]])
+		box         = np.array([[0,0,0],[0.5,1.0,0.25]])
+	geom = BoxGeometry(box)
 
 	if (p > 2):
-		solver    = HPSMultidomain(pdo,box_geom,a,p)
+		solver    = HPSMultidomain(pdo,geom,a,p)
 	else:
-		solver    = FDDiscretization(pdo,box_geom,a)
+		solver    = FDDiscretization(pdo,geom,a)
 
 	return  solver.verify_discretization(kh)
 

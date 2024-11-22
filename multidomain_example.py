@@ -33,7 +33,7 @@ else:
 ######################################################################
 
 tic       = time()
-solver.setup_solver_CC()
+solver.setup_solver_Aii()
 toc_setup = time() - tic
 
 relerr    = solver.verify_discretization(kh)
@@ -55,16 +55,16 @@ ax  = fig.add_subplot() if ndim == 2 else fig.add_subplot(projection='3d')
 
 if (ndim == 2):
 
-	ax.scatter(solver.XX[solver.I_X,0],solver.XX[solver.I_X,1])
-	ax.scatter(solver.XX[solver.I_C,0],solver.XX[solver.I_C,1])
+	ax.scatter(solver.XX[solver.Jx,0],solver.XX[solver.Jx,1])
+	ax.scatter(solver.XX[solver.Ji,0],solver.XX[solver.Ji,1])
 	ax.set_aspect('equal','box')
 
 else:
 
-	ax.scatter(solver.XX[solver.I_X,0],solver.XX[solver.I_X,1],\
-		solver.XX[solver.I_X,2])
-	ax.scatter(solver.XX[solver.I_C,0],solver.XX[solver.I_C,1],\
-		solver.XX[solver.I_C,2])
+	ax.scatter(solver.XX[solver.Jx,0],solver.XX[solver.Jx,1],\
+		solver.XX[solver.Jx,2])
+	ax.scatter(solver.XX[solver.Ji,0],solver.XX[solver.Ji,1],\
+		solver.XX[solver.Ji,2])
 	ax.set_box_aspect([1,1,1])
 
 plt.show()

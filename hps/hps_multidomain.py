@@ -163,46 +163,46 @@ class HPSMultidomain(AbstractPDESolver):
         self._XX = xx_list.reshape(xx_list.shape[0] * xx_list.shape[1],self.ndim)
 
         if  (self.ndim == 2):
-            self.I_copy1,self.I_copy2 = \
+            self._Jcopy1,self._Jcopy2 = \
             get_duplicated_interior_points_2d(self.p, self.npan_dim)
         elif (self.ndim == 3):
-            self.I_copy1,self.I_copy2 = \
+            self._Jcopy1,self._Jcopy2 = \
             get_duplicated_interior_points_3d(self.p, self.npan_dim)
         else:
             raise ValueError
 
-        self.J_X = np.setdiff1d(np.arange(self.XX.shape[0]), \
-            np.union1d(self.I_copy1,self.I_copy2))
-        self.J_C = self.I_copy1
+        self._Jx = np.setdiff1d(np.arange(self.XX.shape[0]), \
+            np.union1d(self._Jcopy1,self._Jcopy2))
+        self._Ji = self._Jcopy1
 
         A    = block_diag(tuple(self.DtN_list),format='csr')
         del self.DtN_list
 
         #### accumulate coo matrix
-        A_CC = CSRBuilder(self.I_copy1.shape[0],\
-            self.I_copy1.shape[0],A.nnz)
-        A_CC.add_data(A[self.I_copy1][:,self.I_copy1])
-        A_CC.add_data(A[self.I_copy1][:,self.I_copy2])
-        A_CC.add_data(A[self.I_copy2][:,self.I_copy1])
-        A_CC.add_data(A[self.I_copy2][:,self.I_copy2])
-        A_CC = A_CC.tocsr()
+        Aii = CSRBuilder(self._Jcopy1.shape[0],\
+            self._Jcopy1.shape[0],A.nnz)
+        Aii.add_data(A[self._Jcopy1][:,self._Jcopy1])
+        Aii.add_data(A[self._Jcopy1][:,self._Jcopy2])
+        Aii.add_data(A[self._Jcopy2][:,self._Jcopy1])
+        Aii.add_data(A[self._Jcopy2][:,self._Jcopy2])
+        Aii = Aii.tocsr()
 
-        A_CX = CSRBuilder(self.I_copy1.shape[0],\
-            self.I_X.shape[0],A.nnz)
-        A_CX.add_data(A[self.I_copy1][:,self.I_X])
-        A_CX.add_data(A[self.I_copy2][:,self.I_X])
-        A_CX = A_CX.tocsr()
+        Aix = CSRBuilder(self._Jcopy1.shape[0],\
+            self.Jx.shape[0],A.nnz)
+        Aix.add_data(A[self._Jcopy1][:,self.Jx])
+        Aix.add_data(A[self._Jcopy2][:,self.Jx])
+        Aix = Aix.tocsr()
 
-        A_XC = CSRBuilder(self.I_X.shape[0],
-            self.I_copy1.shape[0],A.nnz)
-        A_XC.add_data(A[self.I_X][:,self.I_copy1])
-        A_XC.add_data(A[self.I_X][:,self.I_copy2])
-        A_XC = A_XC.tocsr()
+        Axi = CSRBuilder(self.Jx.shape[0],
+            self._Jcopy1.shape[0],A.nnz)
+        Axi.add_data(A[self._Jx][:,self._Jcopy1])
+        Axi.add_data(A[self._Jx][:,self._Jcopy2])
+        Axi = Axi.tocsr()
 
-        self._A_CC      = A_CC
-        self._A_CX      = A_CX
-        self._A_XC      = A_XC
-        self._A_XX      = A[self.I_X][:,self.I_X]
+        self._Aii      = Aii
+        self._Aix      = Aix
+        self._Axi      = Axi
+        self._Axx      = A[self.Jx][:,self.Jx]
 
     @property
     def npoints_dim(self):
@@ -217,28 +217,28 @@ class HPSMultidomain(AbstractPDESolver):
         return self._XX
 
     @property
-    def I_C(self):
-        return self.J_C
+    def Ji(self):
+        return self._Ji
 
     @property
-    def I_X(self):
-        return self.J_X
+    def Jx(self):
+        return self._Jx
 
     @property
-    def A_CC(self):
-        return self._A_CC
+    def Aii(self):
+        return self._Aii
     
     @property
-    def A_CX(self):
-        return self._A_CX
+    def Aix(self):
+        return self._Aix
 
     @property
-    def A_XC(self):
-        return self._A_XC
+    def Axi(self):
+        return self._Axi
     
     @property
-    def A_XX(self):
-        return self._A_XX
+    def Axx(self):
+        return self._Axx
 
     @property
     def p(self):

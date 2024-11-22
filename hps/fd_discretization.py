@@ -44,10 +44,10 @@ def grid(box_geom,h):
     else:
         cond2 = True
 
-    I_C = np.where(np.logical_and(np.logical_and(cond0,cond1),cond2))[0]
-    I_X = np.setdiff1d(np.arange(XX.shape[0]),I_C)
+    Ji = np.where(np.logical_and(np.logical_and(cond0,cond1),cond2))[0]
+    Jx = np.setdiff1d(np.arange(XX.shape[0]),Ji)
 
-    return ns,XX,I_C,I_X
+    return ns,XX,Ji,Jx
 
 def assemble_sparse(pdo_op,npoints_dim,XX):
     d = XX.shape[-1]
@@ -140,7 +140,7 @@ class FDDiscretization(AbstractPDESolver):
     def __init__(self,pdo,geom,h,kh=0):
 
         self._geom = geom
-        self._npoints_dim, self._XX, self.J_C, self.J_X = grid(self.geom.bounds,h)
+        self._npoints_dim, self._XX, self._Ji, self._Jx = grid(self.geom.bounds,h)
 
         self.pdo       = pdo
 
@@ -163,25 +163,25 @@ class FDDiscretization(AbstractPDESolver):
         return self._npoints_dim
 
     @property
-    def I_C(self):
-        return self.J_C
+    def Ji(self):
+        return self._Ji
 
     @property
-    def I_X(self):
-        return self.J_X
+    def Jx(self):
+        return self._Jx
     
     @property
-    def A_CC(self):
-        return self.A[self.I_C][:,self.I_C]
+    def Aii(self):
+        return self.A[self.Ji][:,self.Ji]
 
     @property
-    def A_CX(self):
-        return self.A[self.I_C][:,self.I_X]
+    def Aix(self):
+        return self.A[self.Ji][:,self.Jx]
 
     @property
-    def A_XX(self):
-        return self.A[self.I_X][:,self.I_X]
+    def Axx(self):
+        return self.A[self.Jx][:,self.Jx]
 
     @property
-    def A_XC(self):
-        return self.A[self.I_X][:,self.I_C]
+    def Axi(self):
+        return self.A[self.Jx][:,self.Ji]

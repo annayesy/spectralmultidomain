@@ -26,11 +26,13 @@ class AbstractPDESolver(metaclass=ABCMeta):
 		pass
 
 	@abstractproperty
-	def I_C(self):
+	def Ji(self):
+		# index vector for interior points
 		pass
 
 	@abstractproperty
-	def I_X(self):
+	def Jx(self):
+		# index vector for exterior points
 		pass
 
 	@abstractproperty
@@ -40,32 +42,32 @@ class AbstractPDESolver(metaclass=ABCMeta):
 	#################################################
 
 	@abstractproperty
-	def A_CC(self):
+	def Aii(self):
 		pass
 
 	@abstractproperty
-	def A_CX(self):
+	def Aix(self):
 		pass
 
 	@abstractproperty
-	def A_XX(self):
+	def Axx(self):
 		pass
 
 	@abstractproperty
-	def A_XC(self):
+	def Axi(self):
 		pass
 
-	def setup_solver_CC(self,solve_op=None):
+	def setup_solver_Aii(self,solve_op=None):
 		if (solve_op is None):
-			self.solve_op = SparseSolver(self.A_CC).solve_op
+			self.solve_op = SparseSolver(self.Aii).solve_op
 		else:
 			self.solve_op = solve_op
 
 	@property
-	def solver_CC(self):
+	def solver_Aii(self):
 
 		if (not hasattr(self,'solve_op')):
-			self.setup_solver_CC()
+			self.setup_solver_Aii()
 		return self.solve_op
 
 	#################################################
@@ -91,7 +93,7 @@ class AbstractPDESolver(metaclass=ABCMeta):
 		else:
 			uu_tmp = uu_dir
 
-		result = - self.solver_CC ( self.A_CX @ uu_tmp)
+		result = - self.solver_Aii ( self.Aix @ uu_tmp)
 
 		if (uu_dir.ndim == 1):
 			result = result.flatten()
@@ -100,8 +102,8 @@ class AbstractPDESolver(metaclass=ABCMeta):
 	def verify_discretization(self,kh):
 
 		uu      = get_known_greens(self.XX,kh,center = self.geom.bounds[1]+10)
-		uu_sol  = self.solve_dir(uu[self.I_X])
-		uu_true = uu[self.I_C]
+		uu_sol  = self.solve_dir(uu[self.Jx])
+		uu_true = uu[self.Ji]
 
 		err     = np.linalg.norm(uu_sol - uu_true,ord=2)
 		relerr  = err / np.linalg.norm(uu_true,ord=2)
