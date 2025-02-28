@@ -57,9 +57,9 @@ class AbstractPDESolver(metaclass=ABCMeta):
 	def Axi(self):
 		pass
 
-	def setup_solver_Aii(self,solve_op=None):
+	def setup_solver_Aii(self,solve_op=None,use_approx=False):
 		if (solve_op is None):
-			self.solve_op = SparseSolver(self.Aii).solve_op
+			self.solve_op = SparseSolver(self.Aii,use_approx=use_approx).solve_op
 		else:
 			self.solve_op = solve_op
 
