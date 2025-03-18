@@ -1,6 +1,9 @@
-import numpy as np
+
+from hps_subdomain   import LeafSubdomain
+from hps_patch_utils import *
+from pdo             import PDO2d,PDO3d,const,get_known_greens
 from scipy.linalg import null_space
-from numpy.polynomial.chebyshev import chebfit, chebval
+
 import matplotlib.pyplot as plt
 
 def chebyshev_to_coefficients(values, deg):
@@ -90,61 +93,22 @@ def project_chebyshev_square(values_edges, p):
     
     return projected_values_edges
 
-# Function to compute and display accuracy
-def test_accuracy(values_edges, projected_values_edges):
-    n_edges = len(values_edges)
-    
-    # Check corner continuity
-    print("Corner continuity checks:")
-    corners = [
-        (projected_values_edges[0][-1], projected_values_edges[1][0], "Edge 1 end", "Edge 2 start"),
-        (projected_values_edges[1][-1], projected_values_edges[2][0], "Edge 2 end", "Edge 3 start"),
-        (projected_values_edges[2][-1], projected_values_edges[3][0], "Edge 3 end", "Edge 4 start"),
-        (projected_values_edges[3][-1], projected_values_edges[0][0], "Edge 4 end", "Edge 1 start"),
-    ]
-    for val1, val2, desc1, desc2 in corners:
-        diff = np.abs(val1 - val2)
-        print(f"{desc1} vs {desc2}: Difference = {diff:.5e}")
-    
-    # Compute error norms for each edge
-    print("\nApproximation errors:")
-    for i in range(n_edges):
-        original = values_edges[i]
-        projected = projected_values_edges[i]
-        diff = original - projected
-        max_error = np.max(np.abs(diff))
-        l2_error = np.sqrt(np.sum(diff ** 2))
-        print(f"Edge {i + 1}: Max Error = {max_error:.5e}, L2 Error = {l2_error:.5e}")
-    
-    # Optional: Plot original and projected functions
-    import matplotlib.pyplot as plt
-    cheb_nodes = np.linspace(-1, 1, len(values_edges[0]))
-    for i in range(n_edges):
-        plt.figure()
-        plt.plot(cheb_nodes, values_edges[i], 'b-', label='Original')
-        plt.plot(cheb_nodes, projected_values_edges[i], 'r--', label='Projected')
-        plt.title(f"Edge {i + 1}")
-        plt.legend()
-        plt.xlabel('Chebyshev Nodes')
-        plt.ylabel('Function Value')
-        plt.show()
+box_geom = np.array([[0.5,0.5],[1.0,1.0]]); a = 0.25; p = 20; kh = 2
+ndim           = box_geom.shape[-1]
+patch_utils    = PatchUtils(a,p,ndim=ndim)
 
-# Example Usage
-if __name__ == "__main__":
-    n_cheb = 16  # Number of Chebyshev nodes
-    p = 16        # Polynomial degree + 1 (number of coefficients)
-    
-    # Example functions on Chebyshev nodes for 4 edges
-    cheb_nodes = np.linspace(-1, 1, n_cheb)
-    edge_1 = np.sin(np.pi * cheb_nodes)
-    edge_2 = np.sin(2*np.pi * cheb_nodes)
-    edge_3 = np.sin(np.pi * cheb_nodes)
-    edge_4 = np.sin(2*np.pi * cheb_nodes)
-    
-    values_edges = [edge_1, edge_2, edge_3, edge_4]
-    
-    # Project to ensure corner continuity
-    projected_values_edges = project_chebyshev_square(values_edges, p)
-    
-    # Test accuracy
-    test_accuracy(values_edges, projected_values_edges)
+pdo = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
+
+leaf_subdomain = LeafSubdomain(box_geom, pdo, patch_utils)
+
+Jx_stack     = np.hstack((leaf_subdomain.JJ_int.Jl, leaf_subdomain.JJ_int.Jr,\
+    leaf_subdomain.JJ_int.Jd, leaf_subdomain.JJ_int.Ju))
+
+uu_exact_cheb = get_known_greens(leaf_subdomain.xxloc_int[Jx_stack],kh).reshape(4*p,)
+
+values_edges = [uu_exact_cheb[:p], uu_exact_cheb[p:2*p], uu_exact_cheb[2*p:3*p], uu_exact_cheb[3*p:]]
+
+projected_values_edges = project_chebyshev_square(values_edges, p)
+
+for i in range(4):
+    print(values_edges[i] - projected_values_edges[i])
