@@ -4,16 +4,17 @@ import numpy as np
 from collections import namedtuple
 import scipy
 from time import time
-import numpy.polynomial.chebyshev as cheb_py
+from numpy.polynomial.legendre import leggauss
 import scipy.linalg
 
 # Define named tuples for storing partial differential operators (PDOs) and differential schemes (Ds)
 # for both 2D and 3D problems, along with indices (JJ) for domain decomposition.
-Ds_2d    = namedtuple('Ds_2d', ['D11','D22','D12','D1','D2'])
-JJ_2d    = namedtuple('JJ_2d', ['Jl','Jr','Jd','Ju','Jx','Jc'])
+Ds_2d      = namedtuple('Ds_2d',    ['D11','D22','D12','D1','D2'])
+JJ_2d      = namedtuple('JJ_2d',    ['Jl','Jr','Jd','Ju','Ji'])
+JJext_2d   = namedtuple('JJext_2d', ['Jl','Jr','Jd','Ju'])
 
 Ds_3d    = namedtuple('Ds_3d', ['D11','D22','D33','D12','D13','D23','D1','D2','D3'])
-JJ_3d    = namedtuple('JJ_3d', ['Jl','Jr','Jd','Ju','Jb','Jf','Jx','Jc'])
+JJ_3d    = namedtuple('JJ_3d', ['Jl','Jr','Jd','Ju','Jb','Jf','Ji'])
 
 def cheb(p):
 	"""
@@ -26,22 +27,52 @@ def cheb(p):
 	- D: The Chebyshev differentiation matrix
 	- x: The Chebyshev points
 	"""
-	x = np.cos(np.pi * np.arange(p+1) / p)
-	c = np.concatenate((np.array([2]), np.ones(p-1), np.array([2])))
-	c = np.multiply(c,np.power(np.ones(p+1) * -1, np.arange(p+1)))
-	X = x.repeat(p+1).reshape((-1,p+1))
+	x = np.cos(np.pi * np.arange(p) / (p-1))
+	c = np.concatenate((np.array([2]), np.ones(p-2), np.array([2])))
+	c = np.multiply(c,np.power(np.ones(p) * -1, np.arange(p)))
+	X = x.repeat(p).reshape((-1,p))
 	dX = X - X.T
 	# create the off diagonal entries of D
-	D = np.divide(np.outer(c,np.divide(np.ones(p+1),c)), dX + np.eye(p+1))
+	D = np.divide(np.outer(c,np.divide(np.ones(p),c)), dX + np.eye(p))
 	D = D - np.diag(np.sum(D,axis=1))
-	return D,x
+	return D,np.flip(x)
+
+def chebyshev_to_legendre_matrix(a,p):
+    """
+    Constructs a transformation matrix to convert a vector tabulated
+    on Chebyshev nodes to one tabulated on Legendre nodes.
+    
+    Parameters:
+    p : int
+        The number of nodes for Chebyshev and Legendre.
+    
+    Returns:
+    numpy.ndarray
+        Transformation matrix of shape (p, p).
+    """
+    cheb_nodes     = a * cheb(p)[1]
+    legendre_nodes = a * leggauss(p)[0]
+
+    # Construct Lagrange basis function
+    def lagrange_basis(x, k, nodes):
+        l_k = np.prod([(x - nodes[j]) / (nodes[k] - nodes[j]) for j in range(len(nodes)) if j != k], axis=0)
+        return l_k
+
+    # Populate the transformation matrix
+    transformation_matrix = np.zeros((p, p))
+    for i, x_leg in enumerate(legendre_nodes):  # Loop over Legendre nodes
+        for j in range(p):  # Loop over Chebyshev nodes
+            transformation_matrix[i, j] = lagrange_basis(x_leg, j, cheb_nodes)
+    
+    return transformation_matrix
 
 
 #################################### Cheb utils for 2d and 3d ##########################################
 
 def cheb_2d(a,p):
-	D,xvec = cheb(p-1)
-	xvec = a * np.flip(xvec)
+	D,xvec = cheb(p)
+
+	xvec = a * xvec
 	D = (1/a) * D
 	I = np.eye(p)
 	D1 = -np.kron(D,I)
@@ -59,8 +90,8 @@ def cheb_2d(a,p):
 
 
 def cheb_3d(a,p):
-	D,xvec = cheb(p-1)
-	xvec = a * np.flip(xvec)
+	D,xvec = cheb(p)
+	xvec = a * xvec
 	D = (1/a) * D
 	I = np.eye(p)
 	D1 = -np.kron(D,np.kron(I,I))
@@ -90,22 +121,38 @@ def leaf_discretization_2d(a,p):
 
 	Jc0   = np.abs(zz[0,:]) < a - 0.5*hmin
 	Jc1   = np.abs(zz[1,:]) < a - 0.5*hmin
-	Jl    = np.argwhere(np.logical_and(zz[0,:] < - a + 0.5 * hmin,Jc1))
-	Jl    = Jl.copy().reshape(p-2,)
-	Jr    = np.argwhere(np.logical_and(zz[0,:] > + a - 0.5 * hmin,Jc1))
-	Jr    = Jr.copy().reshape(p-2,)
-	Jd    = np.argwhere(np.logical_and(zz[1,:] < - a + 0.5 * hmin,Jc0))
-	Jd    = Jd.copy().reshape(p-2,)
-	Ju    = np.argwhere(np.logical_and(zz[1,:] > + a - 0.5 * hmin,Jc0))
-	Ju    = Ju.copy().reshape(p-2,)
-	Jc    = np.argwhere(np.logical_and(Jc0,Jc1))
-	Jc    = Jc.copy().reshape((p-2)**2,)
-	Jx    = np.concatenate((Jl,Jr,Jd,Ju))
+	Jl    = np.argwhere(zz[0,:] < - a + 0.5 * hmin).reshape(p,)
+	Jr    = np.argwhere(zz[0,:] > + a - 0.5 * hmin).reshape(p,)
+	Jd    = np.argwhere(zz[1,:] < - a + 0.5 * hmin).reshape(p,)
+	Ju    = np.argwhere(zz[1,:] > + a - 0.5 * hmin).reshape(p,)
+
+	Ji    = np.argwhere(np.logical_and(Jc0,Jc1)).reshape((p-2)**2,)
 	
-	JJ    = JJ_2d(Jl= Jl, Jr= Jr, Ju= Ju, Jd= Jd, 
-			 Jx= Jx, Jc= Jc)
+	JJ    = JJ_2d(Jl= Jl, Jr= Jr, Ju= Ju, Jd= Jd, Ji = Ji)
 	return zz,Ds,JJ,hmin
 
+def ext_discretization_2d(a,p):
+
+	leg_nodes,_ = leggauss(p);
+
+	zz             = np.zeros((2,4*p))
+
+	zz [0,0*p:1*p] = -a                # left
+	zz [1,0*p:1*p] = a * leg_nodes     # left
+
+	zz [0,1*p:2*p] = +a                # right
+	zz [1,1*p:2*p] = a * leg_nodes     # right
+
+	zz [0,2*p:3*p] = a * leg_nodes     # down
+	zz [1,2*p:3*p] = -a                # down
+
+	zz [0,3*p:4*p] = a * leg_nodes     # up
+	zz [1,3*p:4*p] = +a                # up
+
+	JJ = JJext_2d(Jl = np.arange(p), Jr = np.arange(p,2*p), \
+		Jd = np.arange(2*p,3*p), Ju = np.arange(3*p,4*p))
+
+	return zz,JJ
 
 def leaf_discretization_3d(a,p):
 	zz,Ds = cheb_3d(a,p)
@@ -114,32 +161,16 @@ def leaf_discretization_3d(a,p):
 	Jc0   = np.abs(zz[0,:]) < a - 0.5*hmin
 	Jc1   = np.abs(zz[1,:]) < a - 0.5*hmin
 	Jc2   = np.abs(zz[2,:]) < a - 0.5*hmin
-	Jl    = np.argwhere(np.logical_and(zz[0,:] < - a + 0.5 * hmin,
-									   np.logical_and(Jc1,Jc2)))
-	Jl    = Jl.copy().reshape((p-2)**2,)
-	Jr    = np.argwhere(np.logical_and(zz[0,:] > + a - 0.5 * hmin,
-									   np.logical_and(Jc1,Jc2)))
-	Jr    = Jr.copy().reshape((p-2)**2,)
-	Jd    = np.argwhere(np.logical_and(zz[1,:] < - a + 0.5 * hmin,
-									   np.logical_and(Jc0,Jc2)))
-	Jd    = Jd.copy().reshape((p-2)**2,)
-	Ju    = np.argwhere(np.logical_and(zz[1,:] > + a - 0.5 * hmin,
-									   np.logical_and(Jc0,Jc2)))
-	Ju    = Ju.copy().reshape((p-2)**2,)
-	Jb    = np.argwhere(np.logical_and(zz[2,:] < - a + 0.5 * hmin,
-									   np.logical_and(Jc0,Jc1)))
-	Jb    = Jb.copy().reshape((p-2)**2,)
-	Jf    = np.argwhere(np.logical_and(zz[2,:] > + a - 0.5 * hmin,
-									   np.logical_and(Jc0,Jc1)))
-	Jf    = Jf.copy().reshape((p-2)**2,)
+	Jl    = np.argwhere(np.logical_and(zz[0,:] < - a + 0.5 * hmin)).reshape(p**2,)
+	Jr    = np.argwhere(np.logical_and(zz[0,:] > + a - 0.5 * hmin)).reshape(p**2,)
+	Jd    = np.argwhere(np.logical_and(zz[1,:] < - a + 0.5 * hmin)).reshape(p**2,)
+	Ju    = np.argwhere(np.logical_and(zz[1,:] > + a - 0.5 * hmin)).reshape(p**2,)
+	Jb    = np.argwhere(np.logical_and(zz[2,:] < - a + 0.5 * hmin)).reshape(p**2,)
+	Jf    = np.argwhere(np.logical_and(zz[2,:] > + a - 0.5 * hmin)).reshape(p**2,)
 
-	Jc    = np.argwhere(np.logical_and(Jc0,
-									   np.logical_and(Jc1,Jc2)))
-	Jc    = Jc.copy().reshape((p-2)**3,)
-	Jx    = np.concatenate((Jl,Jr,Jd,Ju,Jb,Jf))
+	Ji    = np.argwhere(np.logical_and(Jc0,np.logical_and(Jc1,Jc2))).reshape((p-2)**3,)
 
-	JJ    = JJ_3d(Jl= Jl, Jr= Jr, Ju= Ju, Jd= Jd, Jb= Jb,
-			 Jf=Jf, Jx=Jx, Jc=Jc)
+	JJ    = JJ_3d(Jl= Jl, Jr= Jr, Ju= Ju, Jd= Jd, Jb= Jb, Jf=Jf, Ji=Ji)
 	return zz,Ds,JJ,hmin
 
 
@@ -177,12 +208,15 @@ class PatchUtils:
 		
 	def _discretize(self,a,p,d):
 		if (d == 2):
-			zz_tmp,self.Ds,self.JJ,self.hmin = leaf_discretization_2d(a,p)
+			zz_int,self.Ds,self.JJ_int,self.hmin = leaf_discretization_2d(a,p)
+			zz_ext,self.JJ_ext                   = ext_discretization_2d (a,p)
+
 		elif (d == 3):
 			zz_tmp,self.Ds,self.JJ,self.hmin = leaf_discretization_3d(a,p)
 
 		else:
 			raise ValueError
 
-		self.zz = zz_tmp.T
-		self.Nx = get_diff_ops(self.Ds,self.JJ,d)
+		self.zz_int = zz_int.T
+		self.zz_ext = zz_ext.T
+		self.Nx     = get_diff_ops(self.Ds,self.JJ_int,d)

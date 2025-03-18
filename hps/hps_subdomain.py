@@ -64,18 +64,19 @@ class LeafSubdomain:
         assert np.abs( np.max(box_len) - 2 * patch_utils.a) < 1e-14
         assert box_geom.shape[-1] == patch_utils.ndim
 
-        self.pdo     = pdo
-        self.xxloc   = patch_utils.zz + c
-        self.diff_ops= patch_utils.Ds
+        self.pdo       = pdo
+        self.xxloc_int = patch_utils.zz_int + c
+        self.xxloc_ext = patch_utils.zz_ext + c
+        self.diff_ops  = patch_utils.Ds
 
         # Jx is ordered as Jl, Jr, Jd, Ju
-        self.Jx  = patch_utils.JJ.Jx
-        self.Jc  = patch_utils.JJ.Jc
-        self.Nx  = patch_utils.Nx
+        self.JJ_int  = patch_utils.JJ_int
+        self.JJ_ext  = patch_utils.JJ_ext
+        #self.Nx  = patch_utils.Nx
 
     @property
     def Aloc(self):
-        return get_Aloc(self.pdo,self.xxloc,self.diff_ops)
+        return get_Aloc(self.pdo,self.xxloc_int,self.diff_ops)
 
     def solve_dir(self,uu_dir,ff_body=None):
 
@@ -105,3 +106,61 @@ class LeafSubdomain:
 
         DtN = self.Nx[:,self.Jx] - self.Nx[:,self.Jc] @ np.linalg.solve(Acc,Acx)
         return DtN
+
+if __name__ == '__main__':
+
+    from hps_patch_utils import PatchUtils,chebyshev_to_legendre_matrix
+    from pdo             import PDO2d,const,get_known_greens
+    from scipy.linalg    import block_diag
+    import matplotlib.pyplot as plt
+    from compatible_proj import project_chebyshev_square
+
+    box_geom     = np.array([[-0.25,-0.25],[+0.25,+0.25]]); a = 0.25; p = 20; kh = 10
+    patch_utils  = PatchUtils(a,p,ndim=2)
+
+    pdo = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
+
+    leaf_subdomain = LeafSubdomain(box_geom, pdo, patch_utils)
+
+    xx_tot = leaf_subdomain.xxloc_int
+    xx_int = leaf_subdomain.xxloc_int[leaf_subdomain.JJ_int.Ji]
+    xx_tmp = leaf_subdomain.xxloc_int[leaf_subdomain.JJ_int.Jl]
+    xx_ext = leaf_subdomain.xxloc_ext
+
+    fig = plt.figure()
+    ax  = fig.add_subplot()
+
+    ax.scatter(xx_tot[:,0], xx_tot[:,1],color='black')
+    ax.scatter(xx_int[:,0], xx_int[:,1],color='tab:blue')
+    ax.scatter(xx_ext[:,0], xx_ext[:,1],color='tab:red')
+
+    ax.set_aspect('equal','box')
+
+    plt.savefig("xxloc.png",transparent=True,dpi=300)
+
+    uu_exact_ext  = get_known_greens(leaf_subdomain.xxloc_ext,kh)
+    uu_exact_cheb = get_known_greens(leaf_subdomain.xxloc_int,kh)
+
+    ####### cheb to legendre
+
+    Ji_cheb      = leaf_subdomain.JJ_int.Ji
+    Jx_stack     = np.hstack((leaf_subdomain.JJ_int.Jl, leaf_subdomain.JJ_int.Jr,\
+        leaf_subdomain.JJ_int.Jd, leaf_subdomain.JJ_int.Ju))
+
+    T            = chebyshev_to_legendre_matrix(a,p)
+    uu_loc_ext   = block_diag(T,T,T,T) @ uu_exact_cheb[Jx_stack]
+
+    print("Cheb to legendre %5.2e" % np.linalg.norm(uu_loc_ext - uu_exact_ext) / np.linalg.norm(uu_exact_ext))
+
+    ####### legendre to cheb
+    Aloc         = leaf_subdomain.Aloc
+
+    uu_calc      = np.zeros(uu_exact_cheb.shape)
+    Jx_cheb      = np.setdiff1d(np.arange(p**2),Ji_cheb)
+
+    tmp_cheb          = np.linalg.solve(block_diag(T,T,T,T),uu_exact_ext )
+    uu_calc[Jx_stack] = project_chebyshev_square(tmp_cheb.reshape(4,p),p).reshape(4*p,1)
+    uu_calc[Ji_cheb]  = - np.linalg.solve(Aloc[Ji_cheb][:,Ji_cheb], \
+        Aloc[Ji_cheb][:,Jx_cheb] @ uu_calc[Jx_cheb])
+
+    print("Legendre to cheb %5.2e"% np.linalg.norm(uu_calc - uu_exact_cheb) / np.linalg.norm(uu_exact_cheb))

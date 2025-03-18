@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.linalg import null_space
 from numpy.polynomial.chebyshev import chebfit, chebval
-import matplotlib.pyplot as plt
+from hps_patch_utils import cheb
 
 def compatible_projection(p):
     """
@@ -61,26 +61,27 @@ def project_chebyshev_square(values_edges, p):
 
     return projected_values_edges
 
-# Example Usage
 
-box_geom = np.array([[0.5, 0.5], [1.0, 1.0]])
-a = 0.25; p = 8; kh = 2
-# The following hps_subdomain, patch_utils, pdo, etc. remain unchanged.
-from hps_subdomain import LeafSubdomain
-from hps_patch_utils import *
-from pdo import PDO2d, PDO3d, const, get_known_greens
+if __name__ == '__main__':
 
-ndim = box_geom.shape[-1]
-patch_utils = PatchUtils(a, p, ndim=ndim)
-pdo = PDO2d(c11=const(1.0), c22=const(1.0), c=const(-kh**2))
-leaf_subdomain = LeafSubdomain(box_geom, pdo, patch_utils)
+    box_geom = np.array([[0.5, 0.5], [1.0, 1.0]])
+    a = 0.25; p = 8; kh = 2
+    # The following hps_subdomain, patch_utils, pdo, etc. remain unchanged.
+    from hps_subdomain import LeafSubdomain
+    from hps_patch_utils import *
+    from pdo import PDO2d, PDO3d, const, get_known_greens
 
-Jx_stack = np.hstack((leaf_subdomain.JJ_int.Jl, leaf_subdomain.JJ_int.Jr,
-                       leaf_subdomain.JJ_int.Jd, leaf_subdomain.JJ_int.Ju))
+    ndim = box_geom.shape[-1]
+    patch_utils = PatchUtils(a, p, ndim=ndim)
+    pdo = PDO2d(c11=const(1.0), c22=const(1.0), c=const(-kh**2))
+    leaf_subdomain = LeafSubdomain(box_geom, pdo, patch_utils)
 
-uu_exact_cheb = get_known_greens(leaf_subdomain.xxloc_int[Jx_stack], kh).reshape(4*p,)
-values_edges  = uu_exact_cheb.reshape(4,p)
-projected_values_edges = project_chebyshev_square(values_edges, p)
+    Jx_stack = np.hstack((leaf_subdomain.JJ_int.Jl, leaf_subdomain.JJ_int.Jr,
+                           leaf_subdomain.JJ_int.Jd, leaf_subdomain.JJ_int.Ju))
 
-for i in range(4):
-    print(values_edges[i] - projected_values_edges[i])
+    uu_exact_cheb = get_known_greens(leaf_subdomain.xxloc_int[Jx_stack], kh).reshape(4*p,)
+    values_edges  = uu_exact_cheb.reshape(4,p)
+    projected_values_edges = project_chebyshev_square(values_edges, p)
+
+    for i in range(4):
+        print(values_edges[i] - projected_values_edges[i])
