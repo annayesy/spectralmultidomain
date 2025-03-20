@@ -101,7 +101,9 @@ class AbstractPDESolver(metaclass=ABCMeta):
 
 	def verify_discretization(self,kh):
 
-		uu      = get_known_greens(self.XX,kh,center = self.geom.bounds[1]+10)
+		XX      = self.geom.parameter_map(self.XX) if hasattr(self.geom,'parameter_map') else self.XX
+
+		uu      = get_known_greens(XX,kh,center = self.geom.bounds[1]+10)
 		uu_sol  = self.solve_dir(uu[self.Jx])
 		uu_true = uu[self.Ji]
 

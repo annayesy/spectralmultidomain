@@ -1,4 +1,5 @@
 import numpy as np
+import scipy
 
 from hps.pdo               import PDO2d,PDO3d,const,get_known_greens
 from hps.geom              import BoxGeometry
@@ -16,7 +17,7 @@ def get_discretization_relerr(a,p,kh,ndim,elongated_x=False,elongated_y=False):
 		elif (elongated_y):
 			box         = np.array([[0,0],[1.0,2*a]])
 		else:
-			box         = np.array([[0,0],[1.0,0.5]])
+			box         = np.array([[0,0],[1.0,1.0]])
 	else:
 		pdo         = PDO3d(c11=const(1.0),c22=const(1.0),c33=const(1.0),c=const(-kh**2))
 		box         = np.array([[0,0,0],[0.5,1.0,0.25]])
@@ -29,18 +30,6 @@ def get_discretization_relerr(a,p,kh,ndim,elongated_x=False,elongated_y=False):
 
 	if (p > 2):
 		assert np.linalg.norm(solver.XX[solver._Jcopy1] - solver.XX[solver._Jcopy2]) < 1e-15
-
-	if (p > 2 and not (elongated_x or elongated_y)):
-		plt.scatter(solver.XX[solver._Jx,0],solver.XX[solver._Jx,1])
-		plt.scatter(solver.XX[solver._Jcopy1,0],solver.XX[solver._Jcopy1,1])
-		plt.axis('equal')
-		plt.show()
-		
-		print(np.unique(solver.XX[solver._Jcopy1,0]))
-
-		d = np.linalg.svd(solver._Aii.todense(),compute_uv=False)
-		print(d)
-
 
 	return  solver.verify_discretization(kh)
 
@@ -79,11 +68,11 @@ def test_hps_2d_elongated():
 
 def test_hps_2d():
 
-	a = 1/4; p = 8; kh = 0; ndim = 2
+	a = 1/16; p = 10; kh = 0; ndim = 2
 	relerr = get_discretization_relerr(a,p,kh,ndim)
 	assert relerr < 1e-12
 
-	kh = 10
+	kh = 8
 	relerr = get_discretization_relerr(a,p,kh,ndim)
 	assert relerr < 1e-12
 

@@ -84,13 +84,13 @@ class LeafSubdomain:
         Jx_stack = np.hstack((self.JJ_int.Jl, self.JJ_int.Jr,\
             self.JJ_int.Jd, self.JJ_int.Ju))
         Ji       = self.JJ_int.Ji
-        Jx       = np.setdiff1d(np.arange(self.p**2),Ji)
+        Jx       = np.setdiff1d(np.arange(self.xxloc_int.shape[0]),Ji)
 
         assert uu_dir.ndim == 2
-        assert uu_dir.shape[0] == Jx_stack.shape[0]
+        assert uu_dir.shape[0] == self.xxloc_ext.shape[0]
 
         nrhs = uu_dir.shape[-1]
-        res  = np.zeros((self.p**2,nrhs))
+        res  = np.zeros((self.xxloc_int.shape[0],nrhs))
 
         Aloc = self.Aloc
         if (ff_body is None):
@@ -113,17 +113,16 @@ class LeafSubdomain:
             loc_sol  = self.solve_dir(mat[:,j:j+1])
             neu_sol  = Nx_stack @ loc_sol
 
-            mat[:,j:j+1] = neu_sol
+            mat[:,j:j+1] = self.utils.legfcheb_exterior_mat @ neu_sol
 
-        return self.utils.legfcheb_exterior_mat @ mat
+        return mat
 
 if __name__ == '__main__':
 
     
-    from pdo             import PDO2d,const,get_known_greens
-    from compatible_proj import project_chebyshev_square
-    from hps_patch_utils import *
-    from cheb_utils      import *
+    from hps.pdo             import PDO2d,const,get_known_greens
+    from hps.hps_patch_utils import *
+    from hps.cheb_utils      import *
 
     import matplotlib.pyplot as plt
 
@@ -134,7 +133,7 @@ if __name__ == '__main__':
 
     leaf_subdomain = LeafSubdomain(box_geom, pdo, patch_utils)
 
-    xx_int = leaf_subdomain.xxloc_int[leaf_subdomain.JJ_int.Ji]
+    xx_int = leaf_subdomain.xxloc_int
     xx_ext = leaf_subdomain.xxloc_ext
 
     uu_exact_ext  = get_known_greens(leaf_subdomain.xxloc_ext,kh)
@@ -154,15 +153,15 @@ if __name__ == '__main__':
     Aloc         = leaf_subdomain.Aloc
 
     uu_calc      = np.zeros(uu_exact_cheb.shape)
-    Jx_cheb      = np.setdiff1d(np.arange(p**2),Ji_cheb)
+    Jx_cheb      = np.setdiff1d(np.arange(xx_int.shape[0]),Ji_cheb)
 
     uu_calc[Jx_stack] = patch_utils.chebfleg_exterior_mat @ uu_exact_ext
     uu_calc[Ji_cheb]  = - np.linalg.solve(Aloc[Ji_cheb][:,Ji_cheb], \
         Aloc[Ji_cheb][:,Jx_cheb] @ uu_calc[Jx_cheb])
     uu_diff = uu_calc - uu_exact_cheb
 
-    assert np.linalg.norm(uu_diff[Ji_cheb]) < 1e-10
     assert np.linalg.norm(uu_diff[Jx_stack]) < 1e-10
+    assert np.linalg.norm(uu_diff[Ji_cheb])  < 1e-10
 
     ###############################################
 

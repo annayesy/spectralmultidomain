@@ -2,7 +2,6 @@ import numpy as np
 from collections         import namedtuple
 from scipy.linalg        import block_diag,lu_factor,lu_solve
 from hps.cheb_utils      import *
-from hps.compatible_proj import project_chebyshev_square
 from scipy.linalg        import null_space
 
 # Define named tuples for storing partial differential operators (PDOs) and differential schemes (Ds)
@@ -16,17 +15,17 @@ JJext_3d = namedtuple('JJ_3d',    ['Jl','Jr','Jd','Ju','Jb','Jf'])
 #################################### Discretization utils for 2d and 3d ##########################################
 
 def leaf_discretization_2d(a,p):
-	zz,Ds = cheb_2d(a,p)
+	zz,Ds = cheb_2d(a,p+1)
 	hmin  = zz[1,1] - zz[0,1]
 
 	Jc0   = np.abs(zz[0,:]) < a - 0.5*hmin
 	Jc1   = np.abs(zz[1,:]) < a - 0.5*hmin
-	Jl    = np.argwhere(zz[0,:] < - a + 0.5 * hmin).reshape(p,)
-	Jr    = np.argwhere(zz[0,:] > + a - 0.5 * hmin).reshape(p,)
-	Jd    = np.argwhere(zz[1,:] < - a + 0.5 * hmin).reshape(p,)
-	Ju    = np.argwhere(zz[1,:] > + a - 0.5 * hmin).reshape(p,)
+	Jl    = np.argwhere(zz[0,:] < - a + 0.5 * hmin).reshape(p+1,)
+	Jr    = np.argwhere(zz[0,:] > + a - 0.5 * hmin).reshape(p+1,)
+	Jd    = np.argwhere(zz[1,:] < - a + 0.5 * hmin).reshape(p+1,)
+	Ju    = np.argwhere(zz[1,:] > + a - 0.5 * hmin).reshape(p+1,)
 
-	Ji    = np.argwhere(np.logical_and(Jc0,Jc1)).reshape((p-2)**2,)
+	Ji    = np.argwhere(np.logical_and(Jc0,Jc1)).reshape((p-1)**2,)
 	
 	JJ    = JJ_2d(Jl= Jl, Jr= Jr, Ju= Ju, Jd= Jd, Ji = Ji)
 	return zz,Ds,JJ,hmin
@@ -54,20 +53,20 @@ def ext_discretization_2d(a,p):
 	return zz,JJ
 
 def leaf_discretization_3d(a,p):
-	zz,Ds = cheb_3d(a,p)
+	zz,Ds = cheb_3d(a,p+1)
 	hmin  = zz[2,1] - zz[2,0]
 
 	Jc0   = np.abs(zz[0,:]) < a - 0.5*hmin
 	Jc1   = np.abs(zz[1,:]) < a - 0.5*hmin
 	Jc2   = np.abs(zz[2,:]) < a - 0.5*hmin
-	Jl    = np.argwhere(zz[0,:] < - a + 0.5 * hmin).reshape(p**2,)
-	Jr    = np.argwhere(zz[0,:] > + a - 0.5 * hmin).reshape(p**2,)
-	Jd    = np.argwhere(zz[1,:] < - a + 0.5 * hmin).reshape(p**2,)
-	Ju    = np.argwhere(zz[1,:] > + a - 0.5 * hmin).reshape(p**2,)
-	Jb    = np.argwhere(zz[2,:] < - a + 0.5 * hmin).reshape(p**2,)
-	Jf    = np.argwhere(zz[2,:] > + a - 0.5 * hmin).reshape(p**2,)
+	Jl    = np.argwhere(zz[0,:] < - a + 0.5 * hmin).reshape((p+1)**2,)
+	Jr    = np.argwhere(zz[0,:] > + a - 0.5 * hmin).reshape((p+1)**2,)
+	Jd    = np.argwhere(zz[1,:] < - a + 0.5 * hmin).reshape((p+1)**2,)
+	Ju    = np.argwhere(zz[1,:] > + a - 0.5 * hmin).reshape((p+1)**2,)
+	Jb    = np.argwhere(zz[2,:] < - a + 0.5 * hmin).reshape((p+1)**2,)
+	Jf    = np.argwhere(zz[2,:] > + a - 0.5 * hmin).reshape((p+1)**2,)
 
-	Ji    = np.argwhere(np.logical_and(Jc0,np.logical_and(Jc1,Jc2))).reshape((p-2)**3,)
+	Ji    = np.argwhere(np.logical_and(Jc0,np.logical_and(Jc1,Jc2))).reshape((p-1)**3,)
 
 	JJ    = JJ_3d(Jl= Jl, Jr= Jr, Ju= Ju, Jd= Jd, Jb= Jb, Jf=Jf, Ji=Ji)
 	return zz,Ds,JJ,hmin
@@ -143,25 +142,25 @@ class PatchUtils:
 			self.JJ_int.Jd, self.JJ_int.Ju))
 		zz_tmp   = self.zz_int[Jx_stack]
 
-		LU_mat = lu_factor(self.legfcheb_exterior_mat)
-		chebfleg_exterior_mat = lu_solve(LU_mat,np.eye(self.zz_ext.shape[0]))
+		T = chebfleg_matrix(self.a,self.p)
+		chebfleg_exterior_mat = block_diag(T,T,T,T)
 
-		constraints = np.zeros((4,self.zz_ext.shape[0]))
-		constraints[0,0]      = 1  
-		constraints[0,2*p]    = -1 # bottom left corner
-		assert np.linalg.norm(zz_tmp[0] - zz_tmp[2*p]) < 1e-15
+		constraints = np.zeros((4,4*(p+1)))
+		constraints[0,0]          = 1  
+		constraints[0,2*(p+1)]    = -1 # bottom left corner
+		assert np.linalg.norm(zz_tmp[0] - zz_tmp[2*(p+1)]) < 1e-15
 
-		constraints[1,3*p-1]  = 1  
-		constraints[1,p]      = -1 # bottom right corner
-		assert np.linalg.norm(zz_tmp[3*p-1] - zz_tmp[p]) < 1e-15
+		constraints[1,3*(p+1)-1]  = 1  
+		constraints[1,(p+1)]      = -1 # bottom right corner
+		assert np.linalg.norm(zz_tmp[3*(p+1)-1] - zz_tmp[(p+1)]) < 1e-15
 
-		constraints[2,p-1]    = 1  
-		constraints[2,3*p]    = -1 # upper left corner
-		assert np.linalg.norm(zz_tmp[p-1] - zz_tmp[3*p]) < 1e-15
+		constraints[2,(p+1)-1]    = 1  
+		constraints[2,3*(p+1)]    = -1 # upper left corner
+		assert np.linalg.norm(zz_tmp[(p+1)-1] - zz_tmp[3*(p+1)]) < 1e-15
 
-		constraints[3,2*p-1]  = 1  
-		constraints[3,4*p-1]  = -1 # upper right corner
-		assert np.linalg.norm(zz_tmp[2*p-1] - zz_tmp[4*p-1]) < 1e-15
+		constraints[3,2*(p+1)-1]  = 1  
+		constraints[3,4*(p+1)-1]  = -1 # upper right corner
+		assert np.linalg.norm(zz_tmp[2*(p+1)-1] - zz_tmp[4*(p+1)-1]) < 1e-15
 
 		N = null_space(constraints)
 		return N @ N.T @ chebfleg_exterior_mat

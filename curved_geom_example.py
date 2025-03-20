@@ -8,8 +8,7 @@ from hps.fd_discretization import FDDiscretization
 from time import time
 from matplotlib import pyplot as plt
 
-
-a = 1/8; p = 10; kh = 8
+a = 1/16; p = 10; kh = 8
 
 #############################################################
 
@@ -37,7 +36,7 @@ y2_d1d1  = lambda xx: np.multiply(xx[:,1], ddpsi(xx[:,0]))
 ## We would like to solve the constant-coefficient Helmholtz equation
 ## on the parameterized geometry.
 
-box_geom   = np.array([[0,0],[1.0,0.5]])
+box_geom   = np.array([[0,0],[1.0,1.0]])
 param_geom = ParametrizedGeometry2D(box_geom, z1, z2, y1, y2,\
     y1_d1=y1_d1, y2_d1=y2_d1, y2_d2=y2_d2,y2_d1d1=y2_d1d1)
 
@@ -47,3 +46,5 @@ def bfield_constant(xx,kh):
 pdo_mod = param_geom.transform_helmholtz_pdo(bfield_constant, kh)
 
 solver  = HPSMultidomain(pdo_mod,param_geom,a,p)
+relerr  = solver.verify_discretization(kh)
+print(relerr)

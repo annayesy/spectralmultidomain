@@ -75,7 +75,7 @@ def test_legfcheb_matrix():
     T = legfcheb_matrix(a, p)
     
     # Get Chebyshev nodes (using the second output from cheb for nodes)
-    cheb_nodes = a * cheb(p)[0]
+    cheb_nodes = a * cheb(p+1)[0]
     
     # Get Legendre nodes
     legendre_nodes = a * leggauss(p)[0]
@@ -97,6 +97,52 @@ def test_legfcheb_matrix():
     # Assert that the error is very small
     assert err < 1e-10, f"Transformation error {err} exceeds tolerance"
 
+
+def test_chebfleg_matrix():
+    """
+    Test the transformation matrix that maps function values
+    from Chebyshev nodes to Legendre nodes.
+    
+    We use the polynomial function f(x) = x^2. Since this is a 
+    degree-2 polynomial, it should be exactly reproduced by 
+    the interpolation provided the number of nodes p >= 3.
+    
+    The test computes:
+      - f_cheb: f evaluated at Chebyshev nodes.
+      - f_leg_exact: f evaluated at Legendre nodes.
+      - f_leg_approx: f_cheb mapped to Legendre nodes via the transformation matrix.
+    
+    The test asserts that the maximum error is below a tight tolerance.
+    """
+    import numpy as np
+    from numpy.polynomial.legendre import leggauss
+
+    p = 10
+    a = 1.0
+    
+    # Compute the transformation matrix
+    T = chebfleg_matrix(a, p)
+    
+    # Get Chebyshev nodes (using the second output from cheb for nodes)
+    cheb_nodes     = a * cheb(p+1)[0]
+    legendre_nodes = a * leggauss(p)[0]
+    
+    # Define the test function f(x)=x^2 (a polynomial of degree 2)
+    f = lambda x: x**2
+    
+    # Evaluate f on the Chebyshev and Legendre nodes
+    f_cheb_exact = f(cheb_nodes)       # function values at Chebyshev nodes (length p+1)
+    f_leg_exact  = f(legendre_nodes)     # function values at Legendre nodes (length p)
+    
+    # Compute the interpolated values at Legendre nodes from Chebyshev values
+    f_cheb_approx = T @ f_leg_exact      # should yield approximations at Legendre nodes
+    
+    # Compute the maximum error
+    err = np.max(np.abs(f_cheb_approx - f_cheb_exact))
+    print("Maximum error in transformation:", err)
+    
+    # Assert that the error is very small
+    assert err < 1e-10, f"Transformation error {err} exceeds tolerance"
 
 def test_cheb_3d():
     """
