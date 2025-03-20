@@ -1,7 +1,7 @@
 import numpy as np
-from scipy.linalg import null_space
+from scipy.linalg               import null_space
 from numpy.polynomial.chebyshev import chebfit, chebval
-from hps_patch_utils import cheb
+from hps.cheb_utils             import *
 
 def compatible_projection(p):
     """
@@ -45,7 +45,7 @@ def project_chebyshev_square(values_edges, p):
           List of 4 arrays, each containing modified Chebyshev collocated values with corner continuity.
     """
     n_cheb = values_edges.shape[1]  # Number of Chebyshev nodes
-    nodes = cheb(n_cheb)[1]
+    nodes = cheb(n_cheb)[0]
 
     coeffs_edges    = np.polynomial.chebyshev.chebfit(nodes, \
         values_edges.T, deg=p-1).T
@@ -68,7 +68,7 @@ if __name__ == '__main__':
     a = 0.25; p = 8; kh = 2
     # The following hps_subdomain, patch_utils, pdo, etc. remain unchanged.
     from hps_subdomain import LeafSubdomain
-    from hps_patch_utils import *
+    from hps_patch_utils import PatchUtils
     from pdo import PDO2d, PDO3d, const, get_known_greens
 
     ndim = box_geom.shape[-1]

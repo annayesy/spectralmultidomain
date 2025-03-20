@@ -14,7 +14,7 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
 
     ndim        = npan_dim.shape[0]
     patch_utils = PatchUtils(a,p,ndim=npan_dim.shape[0])
-    Jx_shape    = patch_utils.JJ.Jx.shape[0]
+    Jx_shape    = patch_utils.zz_ext.shape[0]
 
     xx_list     = np.zeros((np.prod(npan_dim),Jx_shape, ndim))
     DtN_list    = np.zeros((np.prod(npan_dim),Jx_shape, Jx_shape))
@@ -34,7 +34,7 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
 
                 box_ind  = i+j*npan_dim[0]
 
-                xx_list [box_ind] = leaf_loc.xxloc[leaf_loc.Jx]
+                xx_list [box_ind] = leaf_loc.xxloc_ext
                 DtN_list[box_ind] = leaf_loc.DtN
 
     else:
@@ -54,14 +54,14 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
 
                     box_ind  = i + j * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
 
-                    xx_list [box_ind] = leaf_loc.xxloc[leaf_loc.Jx]
+                    xx_list [box_ind] = leaf_loc.xxloc_ext
                     DtN_list[box_ind] = leaf_loc.DtN
 
     return npan_dim,xx_list,DtN_list
 
 def get_duplicated_interior_points_2d(p,npan_dim):
 
-    size_bnd = p-2
+    size_bnd = p
     size_ext = 4*size_bnd
 
     Icopy1 = np.zeros(np.prod(npan_dim) * size_ext, dtype=int)
@@ -96,7 +96,7 @@ def get_duplicated_interior_points_2d(p,npan_dim):
 
 def get_duplicated_interior_points_3d(p,npan_dim):
 
-    size_bnd = (p-2)**2
+    size_bnd = p**2
     size_ext = 6*size_bnd
 
     Icopy1 = np.zeros(np.prod(npan_dim) * size_ext, dtype=int)

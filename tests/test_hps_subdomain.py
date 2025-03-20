@@ -5,6 +5,21 @@ from hps.pdo             import PDO2d,PDO3d,const,get_known_greens
 from hps.hps_subdomain   import LeafSubdomain
 from hps.hps_patch_utils import PatchUtils
 
+def helper_test_bounds(xx,box_geom):
+	ndim             = box_geom.shape[-1]
+	cond1 = xx[:,0] >= box_geom[0,0] 
+	cond2 = xx[:,0] <= box_geom[1,0]
+	cond3 = xx[:,1] >= box_geom[0,1]
+	cond4 = xx[:,1] <= box_geom[1,1]
+
+	assert np.all(cond1); assert np.all(cond2)
+	assert np.all(cond3); assert np.all(cond4)
+
+	if (ndim == 3):
+		cond5 = xx[:,2] >= box_geom[0,2] 
+		cond6 = xx[:,2] <= box_geom[1,2]
+		assert np.all(cond5); assert np.all(cond6)
+
 def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 
 	ndim           = box_geom.shape[-1]
@@ -16,49 +31,16 @@ def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 		pdo = PDO3d(c11=const(1.0),c22=const(1.0),c33=const(1.0),c=const(-kh**2)) 
 	leaf_subdomain = LeafSubdomain(box_geom, pdo, patch_utils)
 
-	cond1 = leaf_subdomain.xxloc[:,0] >= box_geom[0,0] 
-	cond2 = leaf_subdomain.xxloc[:,0] <= box_geom[1,0]
-	cond3 = leaf_subdomain.xxloc[:,1] >= box_geom[0,1]
-	cond4 = leaf_subdomain.xxloc[:,1] <= box_geom[1,1]
+	helper_test_bounds(leaf_subdomain.xxloc_int,box_geom)
+	helper_test_bounds(leaf_subdomain.xxloc_ext,box_geom)
 
-	assert np.all(cond1)
-	assert np.all(cond2)
-	assert np.all(cond3)
-	assert np.all(cond4)
+	uu_exact = get_known_greens(leaf_subdomain.xxloc_int,kh)
+	uu_dir   = get_known_greens(leaf_subdomain.xxloc_ext,kh)
 
-	if (ndim == 3):
-		cond5 = leaf_subdomain.xxloc[:,2] >= box_geom[0,2] 
-		cond6 = leaf_subdomain.xxloc[:,2] <= box_geom[1,2]
-		assert np.all(cond5)
-		assert np.all(cond6)
+	uu_sol   = leaf_subdomain.solve_dir(uu_dir)
 
-	uu_exact = get_known_greens(leaf_subdomain.xxloc,kh)
-	uu_sol   = leaf_subdomain.solve_dir(uu_exact[leaf_subdomain.Jx])
-
-	if (savefig):
-
-		XX = leaf_subdomain.xxloc
-		Jc = leaf_subdomain.Jc
-		Jx = leaf_subdomain.Jx
-
-		assert  Jc.shape[0] == (p-2)**ndim
-		assert  Jx.shape[0] == (p-2)**(ndim - 1) * (4 if ndim == 2 else 6)
-
-		fig = plt.figure()
-		ax  = fig.add_subplot() if box_geom.shape[-1] == 2 else fig.add_subplot(projection='3d')
-
-		if (box_geom.shape[-1] ==2):
-			ax.scatter(XX[Jc,0], XX[Jc,1],color='tab:blue')
-			ax.scatter(XX[Jx,0], XX[Jx,1],color='tab:red')
-			ax.set_aspect('equal','box')
-		else:
-			ax.scatter(XX[Jc,0], XX[Jc,1], XX[Jc,2],color='tab:blue')
-			ax.scatter(XX[Jx,0], XX[Jx,1], XX[Jx,2],color='tab:red')
-			ax.set_box_aspect([1,1,1])
-		plt.savefig('figures/leaf_%dd.pdf' % box_geom.shape[-1])
-
-	err    = uu_exact[leaf_subdomain.Jc] - uu_sol
-	relerr = np.linalg.norm(err) / np.linalg.norm(uu_exact[leaf_subdomain.Jc])
+	err    = uu_exact - uu_sol
+	relerr = np.linalg.norm(err) / np.linalg.norm(uu_exact)
 	return relerr
 
 def test_laplace_2dpatch():
@@ -93,7 +75,6 @@ def test_2dconvergence_plot():
 	plt.title("Relative error in solution for Helmholtz with kh="+\
 		"%5.2f\n on square patch of size %5.2f for various p" % (kh,2*a))
 	plt.savefig("figures/relerr_range2d.pdf")
-
 
 def test_laplace_3dpatch():
 

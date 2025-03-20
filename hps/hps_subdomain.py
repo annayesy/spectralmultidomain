@@ -68,11 +68,12 @@ class LeafSubdomain:
         self.xxloc_int = patch_utils.zz_int + c
         self.xxloc_ext = patch_utils.zz_ext + c
         self.diff_ops  = patch_utils.Ds
+        self.p         = patch_utils.p
+        self.utils     = patch_utils
 
         # Jx is ordered as Jl, Jr, Jd, Ju
         self.JJ_int  = patch_utils.JJ_int
         self.JJ_ext  = patch_utils.JJ_ext
-        #self.Nx  = patch_utils.Nx
 
     @property
     def Aloc(self):
@@ -80,87 +81,111 @@ class LeafSubdomain:
 
     def solve_dir(self,uu_dir,ff_body=None):
 
+        Jx_stack = np.hstack((self.JJ_int.Jl, self.JJ_int.Jr,\
+            self.JJ_int.Jd, self.JJ_int.Ju))
+        Ji       = self.JJ_int.Ji
+        Jx       = np.setdiff1d(np.arange(self.p**2),Ji)
+
         assert uu_dir.ndim == 2
-        assert uu_dir.shape[0] == self.Jx.shape[0]
+        assert uu_dir.shape[0] == Jx_stack.shape[0]
 
         nrhs = uu_dir.shape[-1]
+        res  = np.zeros((self.p**2,nrhs))
 
         Aloc = self.Aloc
         if (ff_body is None):
-            ff_body = np.zeros((self.Jc.shape[0],nrhs))
+            ff_body = np.zeros((Ji.shape[0],nrhs))
 
-        Acc = Aloc[self.Jc][:,self.Jc]
-        Acx = Aloc[self.Jc][:,self.Jx]
+        res[Jx_stack] = self.utils.chebfleg_exterior_mat @ uu_dir
+        res[Ji]       = np.linalg.solve(Aloc[Ji][:,Ji], \
+            ff_body - Aloc[Ji][:,Jx] @ res[Jx])
 
-        return np.linalg.solve(Aloc[self.Jc][:,self.Jc], ff_body - Acx @ uu_dir)
+        return res
 
     @property
     def DtN(self):
 
-        Aloc = self.Aloc
+        Nx_stack = self.utils.Nx_stack
+        mat      = np.eye(self.xxloc_ext.shape[0])
 
-        Acc = Aloc[self.Jc][:,self.Jc]
-        Acx = Aloc[self.Jc][:,self.Jx]
+        for j in range(self.xxloc_ext.shape[0]):
 
-        Axc = Aloc[self.Jx][:,self.Jc]
+            loc_sol  = self.solve_dir(mat[:,j:j+1])
+            neu_sol  = Nx_stack @ loc_sol
 
-        DtN = self.Nx[:,self.Jx] - self.Nx[:,self.Jc] @ np.linalg.solve(Acc,Acx)
-        return DtN
+            mat[:,j:j+1] = neu_sol
+
+        return self.utils.legfcheb_exterior_mat @ mat
 
 if __name__ == '__main__':
 
-    from hps_patch_utils import PatchUtils,chebyshev_to_legendre_matrix
+    
     from pdo             import PDO2d,const,get_known_greens
-    from scipy.linalg    import block_diag
-    import matplotlib.pyplot as plt
     from compatible_proj import project_chebyshev_square
+    from hps_patch_utils import *
+    from cheb_utils      import *
 
-    box_geom     = np.array([[-0.25,-0.25],[+0.25,+0.25]]); a = 0.25; p = 20; kh = 10
+    import matplotlib.pyplot as plt
+
+    box_geom = np.array([[0.5,0.25],[1.0,0.75]]); a = 0.25; p = 20; kh = 0
     patch_utils  = PatchUtils(a,p,ndim=2)
 
     pdo = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
 
     leaf_subdomain = LeafSubdomain(box_geom, pdo, patch_utils)
 
-    xx_tot = leaf_subdomain.xxloc_int
     xx_int = leaf_subdomain.xxloc_int[leaf_subdomain.JJ_int.Ji]
-    xx_tmp = leaf_subdomain.xxloc_int[leaf_subdomain.JJ_int.Jl]
     xx_ext = leaf_subdomain.xxloc_ext
-
-    fig = plt.figure()
-    ax  = fig.add_subplot()
-
-    ax.scatter(xx_tot[:,0], xx_tot[:,1],color='black')
-    ax.scatter(xx_int[:,0], xx_int[:,1],color='tab:blue')
-    ax.scatter(xx_ext[:,0], xx_ext[:,1],color='tab:red')
-
-    ax.set_aspect('equal','box')
-
-    plt.savefig("xxloc.png",transparent=True,dpi=300)
 
     uu_exact_ext  = get_known_greens(leaf_subdomain.xxloc_ext,kh)
     uu_exact_cheb = get_known_greens(leaf_subdomain.xxloc_int,kh)
 
-    ####### cheb to legendre
+    ####### legendre f cheb
 
     Ji_cheb      = leaf_subdomain.JJ_int.Ji
     Jx_stack     = np.hstack((leaf_subdomain.JJ_int.Jl, leaf_subdomain.JJ_int.Jr,\
         leaf_subdomain.JJ_int.Jd, leaf_subdomain.JJ_int.Ju))
 
-    T            = chebyshev_to_legendre_matrix(a,p)
-    uu_loc_ext   = block_diag(T,T,T,T) @ uu_exact_cheb[Jx_stack]
+    uu_loc_ext   = patch_utils.legfcheb_exterior_mat @ uu_exact_cheb[Jx_stack]
 
-    print("Cheb to legendre %5.2e" % np.linalg.norm(uu_loc_ext - uu_exact_ext) / np.linalg.norm(uu_exact_ext))
+    assert np.linalg.norm(uu_loc_ext - uu_exact_ext) < 1e-10
 
-    ####### legendre to cheb
+    ####### cheb f legendre
     Aloc         = leaf_subdomain.Aloc
 
     uu_calc      = np.zeros(uu_exact_cheb.shape)
     Jx_cheb      = np.setdiff1d(np.arange(p**2),Ji_cheb)
 
-    tmp_cheb          = np.linalg.solve(block_diag(T,T,T,T),uu_exact_ext )
-    uu_calc[Jx_stack] = project_chebyshev_square(tmp_cheb.reshape(4,p),p).reshape(4*p,1)
+    uu_calc[Jx_stack] = patch_utils.chebfleg_exterior_mat @ uu_exact_ext
     uu_calc[Ji_cheb]  = - np.linalg.solve(Aloc[Ji_cheb][:,Ji_cheb], \
         Aloc[Ji_cheb][:,Jx_cheb] @ uu_calc[Jx_cheb])
+    uu_diff = uu_calc - uu_exact_cheb
 
-    print("Legendre to cheb %5.2e"% np.linalg.norm(uu_calc - uu_exact_cheb) / np.linalg.norm(uu_exact_cheb))
+    assert np.linalg.norm(uu_diff[Ji_cheb]) < 1e-10
+    assert np.linalg.norm(uu_diff[Jx_stack]) < 1e-10
+
+    ###############################################
+
+    uu_exact_ext  = get_known_greens(leaf_subdomain.xxloc_ext,kh=0,center=np.array([0,0]))
+    uu_exact_cheb = get_known_greens(leaf_subdomain.xxloc_int,kh=0,center=np.array([0,0]))
+
+    uu_sol = leaf_subdomain.solve_dir(uu_exact_ext)
+    assert np.linalg.norm(uu_sol - uu_exact_cheb) < 1e-8
+
+    def r_sq(xx):
+        return (xx[:,0]**2 + xx[:,1]**2).reshape(xx.shape[0],1)
+
+    neumann_from_dtn = leaf_subdomain.DtN @ uu_exact_ext
+
+    xx_ext    = leaf_subdomain.xxloc_ext
+    neu_true  = np.zeros(neumann_from_dtn.shape)
+
+    neu_true[:p]     = - box_geom[0,0] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Jl])
+    neu_true[p:2*p]  = + box_geom[1,0] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Jr])
+    neu_true[2*p:3*p]= - box_geom[0,1] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Jd])
+    neu_true[3*p:]   = + box_geom[1,1] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Ju])
+
+    assert np.linalg.norm(neumann_from_dtn - neu_true) < 1e-12
+
+    print(xx_ext[:p])
+    print("Checks passed")

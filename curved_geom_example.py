@@ -20,8 +20,7 @@ z1   = lambda xx: xx[:,0]
 z2   = lambda xx: np.divide(xx[:,1],psi(xx[:,0]))
 
 ### Function y is the inverse map
-### Use Wolfram Alpha to compute 2 partial derivatives wrt y,
-### (some are zero and omitted).
+### Compute 2 partial derivatives wrt y (some are zero and omitted).
 y1   = lambda xx: xx[:,0]
 y2   = lambda xx: np.multiply(xx[:,1],psi(xx[:,0]))
 

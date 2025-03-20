@@ -8,7 +8,7 @@ from hps.fd_discretization import FDDiscretization
 from time import time
 from matplotlib import pyplot as plt
 
-a = 1/8; p = 10; kh = 8; ndim = 3
+a = 1/8; p = 10; kh = 8; ndim = 2
 
 if (ndim == 2):
 	pdo         = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
