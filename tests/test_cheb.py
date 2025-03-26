@@ -68,16 +68,13 @@ def test_legfcheb_matrix():
     import numpy as np
     from numpy.polynomial.legendre import leggauss
 
-    p = 10
+    p = 10; q = 15
     a = 1.0
     
     # Compute the transformation matrix
-    T = legfcheb_matrix(a, p)
+    T = legfcheb_matrix(p,q)
     
-    # Get Chebyshev nodes (using the second output from cheb for nodes)
-    cheb_nodes = a * cheb(p+1)[0]
-    
-    # Get Legendre nodes
+    cheb_nodes     = a * cheb(q)[0]
     legendre_nodes = a * leggauss(p)[0]
     
     # Define the test function f(x)=x^2 (a polynomial of degree 2)
@@ -117,14 +114,14 @@ def test_chebfleg_matrix():
     import numpy as np
     from numpy.polynomial.legendre import leggauss
 
-    p = 10
+    p = 10; q = 12
     a = 1.0
     
     # Compute the transformation matrix
-    T = chebfleg_matrix(a, p)
+    T = chebfleg_matrix(p,q)
     
     # Get Chebyshev nodes (using the second output from cheb for nodes)
-    cheb_nodes     = a * cheb(p+1)[0]
+    cheb_nodes     = a * cheb(q)[0]
     legendre_nodes = a * leggauss(p)[0]
     
     # Define the test function f(x)=x^2 (a polynomial of degree 2)

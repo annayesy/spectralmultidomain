@@ -31,20 +31,22 @@ def cheb(p):
 	D = D - np.diag(np.sum(D, axis=1))
 	return np.flip(x), np.flip(np.flip(D, axis=0), axis=1)
 
-def legfcheb_matrix(a,p):
+def legfcheb_matrix(p,q):
 	"""
 	Constructs a transformation matrix to convert a vector tabulated
 	on Chebyshev nodes to one tabulated on Legendre nodes.
 	
 	Parameters:
 	p : int
-		The number of nodes for Chebyshev and Legendre.
+		The number of nodes for Legendre.
+	q : int
+		The number of nodes for Chebyshev.
 	
 	Returns:
 	numpy.ndarray
-		Transformation matrix of shape (p, p+1).
+		Transformation matrix of shape (p, q).
 	"""
-	cheb_nodes     = cheb(p+1)[0]
+	cheb_nodes     = cheb(q)[0]
 	legendre_nodes = leggauss(p)[0]
 
 	# Construct Lagrange basis function
@@ -53,54 +55,53 @@ def legfcheb_matrix(a,p):
 		return l_k
 
 	# Populate the transformation matrix
-	transformation_matrix = np.zeros((p, p+1))
+	transformation_matrix = np.zeros((p, q))
 	for i, x_leg in enumerate(legendre_nodes):  # Loop over Legendre nodes
-		for j in range(p+1):  # Loop over Chebyshev nodes
+		for j in range(q):  # Loop over Chebyshev nodes
 			transformation_matrix[i, j] = lagrange_basis(x_leg, j, cheb_nodes)
 	
 	return transformation_matrix
 
-def chebfleg_matrix(a, p):
-    """
-    Constructs a transformation matrix that converts a vector tabulated
-    on p Legendre nodes to one tabulated on p+1 Chebyshev nodes.
-    
-    This inverse mapping is defined as the left pseudoinverse of the 
-    transformation matrix from Chebyshev to Legendre nodes.
-    
-    Parameters:
-        a : float
-            Scaling factor for the nodes (nodes lie in [-a, a]).
-        p : int
-            Number of Legendre nodes. The Chebyshev nodes will be p+1.
-    
-    Returns:
-        numpy.ndarray
-            Transformation matrix of shape (p+1, p).
-            When applied to data at Legendre nodes, it yields an approximation
-            of the function values at Chebyshev nodes.
-    """
+def chebfleg_matrix(p, q):
+	"""
+	Constructs a transformation matrix that converts a vector tabulated
+	on p Legendre nodes to one tabulated on p+1 Chebyshev nodes.
+	
+	This inverse mapping is defined as the left pseudoinverse of the 
+	transformation matrix from Chebyshev to Legendre nodes.
+	
+	Parameters:
+	p : int
+		The number of nodes for Legendre.
+	q : int
+		The number of nodes for Chebyshev.
+	
+	Returns:
+		numpy.ndarray
+			Transformation matrix of shape (q, p).
+			When applied to data at Legendre nodes, it yields an approximation
+			of the function values at Chebyshev nodes.
+	"""
 
-    # Get p Legendre nodes on [-1,1] and scale by a
-    leg_nodes = leggauss(p)[0]
-    cheb_nodes = cheb(p+1)[0]
-    
-    # Initialize the transformation matrix
-    T = np.zeros((p+1, p))
-    
-    # Populate the transformation matrix using Lagrange basis polynomials.
-    # For each Chebyshev node x_val, evaluate the j-th Lagrange basis polynomial constructed
-    # with the Legendre nodes.
-    for i_idx, x_val in enumerate(cheb_nodes):
-        for j in range(p):
-            # Compute the j-th Lagrange basis polynomial L_j(x_val)
-            L_j = 1.0
-            for k in range(p):
-                if k == j:
-                    continue
-                L_j *= (x_val - leg_nodes[k]) / (leg_nodes[j] - leg_nodes[k])
-            T[i_idx, j] = L_j
-    return T
+	leg_nodes = leggauss(p)[0]
+	cheb_nodes = cheb(q)[0]
+	
+	# Initialize the transformation matrix
+	T = np.zeros((q, p))
+	
+	# Populate the transformation matrix using Lagrange basis polynomials.
+	# For each Chebyshev node x_val, evaluate the j-th Lagrange basis polynomial constructed
+	# with the Legendre nodes.
+	for i_idx, x_val in enumerate(cheb_nodes):
+		for j in range(p):
+			# Compute the j-th Lagrange basis polynomial L_j(x_val)
+			L_j = 1.0
+			for k in range(p):
+				if k == j:
+					continue
+				L_j *= (x_val - leg_nodes[k]) / (leg_nodes[j] - leg_nodes[k])
+			T[i_idx, j] = L_j
+	return T
 
 #################################### Cheb utils for 2d and 3d ##########################################
 

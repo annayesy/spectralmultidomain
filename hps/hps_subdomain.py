@@ -186,5 +186,4 @@ if __name__ == '__main__':
 
     assert np.linalg.norm(neumann_from_dtn - neu_true) < 1e-12
 
-    print(xx_ext[:p])
     print("Checks passed")
