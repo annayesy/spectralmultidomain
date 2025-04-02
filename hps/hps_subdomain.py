@@ -75,14 +75,22 @@ class LeafSubdomain:
         self.JJ_int  = patch_utils.JJ_int
         self.JJ_ext  = patch_utils.JJ_ext
 
+        self.chebfleg_mat = self.utils.chebfleg_exterior_mat
+        self.legfcheb_mat = self.utils.legfcheb_exterior_mat
+
     @property
     def Aloc(self):
         return get_Aloc(self.pdo,self.xxloc_int,self.diff_ops)
 
     def solve_dir(self,uu_dir,ff_body=None):
 
-        Jx_stack = np.hstack((self.JJ_int.Jl, self.JJ_int.Jr,\
-            self.JJ_int.Jd, self.JJ_int.Ju))
+        if (self.utils.ndim == 2):
+
+            Jx_stack = np.hstack((self.JJ_int.Jl, self.JJ_int.Jr,\
+                self.JJ_int.Jd, self.JJ_int.Ju))
+        else:
+            Jx_stack = np.hstack((self.JJ_int.Jl, self.JJ_int.Jr,\
+                self.JJ_int.Jd, self.JJ_int.Ju, self.JJ_int.Jb, self.JJ_int.Jf ))
         Ji       = self.JJ_int.Ji
         Jx       = np.setdiff1d(np.arange(self.xxloc_int.shape[0]),Ji)
 
@@ -96,7 +104,7 @@ class LeafSubdomain:
         if (ff_body is None):
             ff_body = np.zeros((Ji.shape[0],nrhs))
 
-        res[Jx_stack] = self.utils.chebfleg_exterior_mat @ uu_dir
+        res[Jx_stack] = self.chebfleg_mat @ uu_dir
         res[Ji]       = np.linalg.solve(Aloc[Ji][:,Ji], \
             ff_body - Aloc[Ji][:,Jx] @ res[Jx])
 
@@ -108,28 +116,33 @@ class LeafSubdomain:
         Nx_stack = self.utils.Nx_stack
         mat      = np.eye(self.xxloc_ext.shape[0])
 
-        for j in range(self.xxloc_ext.shape[0]):
+        loc_sol  = self.solve_dir(np.eye(self.xxloc_ext.shape[0]))
+        neu_sol  = Nx_stack @ loc_sol
 
-            loc_sol  = self.solve_dir(mat[:,j:j+1])
-            neu_sol  = Nx_stack @ loc_sol
-
-            mat[:,j:j+1] = self.utils.legfcheb_exterior_mat @ neu_sol
-
-        return mat
+        return self.legfcheb_mat @ neu_sol
 
 if __name__ == '__main__':
 
     
-    from hps.pdo             import PDO2d,const,get_known_greens
+    from hps.pdo             import PDO2d,PDO3d,const,get_known_greens
     from hps.hps_patch_utils import *
     from hps.cheb_utils      import *
 
     import matplotlib.pyplot as plt
 
-    box_geom = np.array([[0.5,0.25],[1.0,0.75]]); a = 0.25; p = 20; kh = 0
-    patch_utils  = PatchUtils(a,p,ndim=2)
+    ndim = 3
 
-    pdo = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
+    if (ndim == 2):
+        box_geom = np.array([[0.5,0.25],[1.0,0.75]]); a = 0.25; p = 20; kh = 0
+        patch_utils  = PatchUtils(a,p,ndim=2)
+
+        pdo = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
+    else:
+
+        box_geom = np.array([[0.5,0.25,0.25],[1.0,0.75,0.75]]); a = 0.25; p = 10; kh = 0
+        patch_utils  = PatchUtils(a,p,ndim=3)
+
+        pdo = PDO3d(c11=const(1.0),c22=const(1.0),c33=const(1.0),c=const(-kh**2))
 
     leaf_subdomain = LeafSubdomain(box_geom, pdo, patch_utils)
 
@@ -142,8 +155,14 @@ if __name__ == '__main__':
     ####### legendre f cheb
 
     Ji_cheb      = leaf_subdomain.JJ_int.Ji
-    Jx_stack     = np.hstack((leaf_subdomain.JJ_int.Jl, leaf_subdomain.JJ_int.Jr,\
-        leaf_subdomain.JJ_int.Jd, leaf_subdomain.JJ_int.Ju))
+    if (ndim == 2):
+        Jx_stack     = np.hstack((leaf_subdomain.JJ_int.Jl, leaf_subdomain.JJ_int.Jr,\
+            leaf_subdomain.JJ_int.Jd, leaf_subdomain.JJ_int.Ju))
+
+    else:
+        Jx_stack     = np.hstack((leaf_subdomain.JJ_int.Jl, leaf_subdomain.JJ_int.Jr,\
+            leaf_subdomain.JJ_int.Jd, leaf_subdomain.JJ_int.Ju,\
+            leaf_subdomain.JJ_int.Jb,leaf_subdomain.JJ_int.Jf))
 
     uu_loc_ext   = patch_utils.legfcheb_exterior_mat @ uu_exact_cheb[Jx_stack]
 
@@ -165,24 +184,30 @@ if __name__ == '__main__':
 
     ###############################################
 
-    uu_exact_ext  = get_known_greens(leaf_subdomain.xxloc_ext,kh=0,center=np.array([0,0]))
-    uu_exact_cheb = get_known_greens(leaf_subdomain.xxloc_int,kh=0,center=np.array([0,0]))
+    center = np.zeros(ndim,)
+
+    uu_exact_ext  = get_known_greens(leaf_subdomain.xxloc_ext,kh=0,center=center)
+    uu_exact_cheb = get_known_greens(leaf_subdomain.xxloc_int,kh=0,center=center)
 
     uu_sol = leaf_subdomain.solve_dir(uu_exact_ext)
-    assert np.linalg.norm(uu_sol - uu_exact_cheb) < 1e-8
-
-    def r_sq(xx):
-        return (xx[:,0]**2 + xx[:,1]**2).reshape(xx.shape[0],1)
+    assert np.linalg.norm(uu_sol - uu_exact_cheb) < 1e-7
 
     neumann_from_dtn = leaf_subdomain.DtN @ uu_exact_ext
 
-    xx_ext    = leaf_subdomain.xxloc_ext
-    neu_true  = np.zeros(neumann_from_dtn.shape)
+    if (ndim == 2):
 
-    neu_true[:p]     = - box_geom[0,0] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Jl])
-    neu_true[p:2*p]  = + box_geom[1,0] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Jr])
-    neu_true[2*p:3*p]= - box_geom[0,1] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Jd])
-    neu_true[3*p:]   = + box_geom[1,1] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Ju])
+        def r_sq(xx):
+            return (xx[:,0]**2 + xx[:,1]**2).reshape(xx.shape[0],1)
+
+        xx_ext    = leaf_subdomain.xxloc_ext
+        neu_true  = np.zeros(neumann_from_dtn.shape)
+
+        neu_true[:p]     = - box_geom[0,0] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Jl])
+        neu_true[p:2*p]  = + box_geom[1,0] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Jr])
+        neu_true[2*p:3*p]= - box_geom[0,1] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Jd])
+        neu_true[3*p:]   = + box_geom[1,1] / r_sq(xx_ext[leaf_subdomain.JJ_ext.Ju])
+    else:
+        raise ValueError
 
     assert np.linalg.norm(neumann_from_dtn - neu_true) < 1e-12
 

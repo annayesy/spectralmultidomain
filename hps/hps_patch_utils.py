@@ -1,8 +1,12 @@
 import numpy as np
-from collections         import namedtuple
-from scipy.linalg        import block_diag,lu_factor,lu_solve
-from hps.cheb_utils      import *
-from scipy.linalg        import null_space
+from collections            import namedtuple
+from scipy.linalg           import block_diag,lu_factor,lu_solve
+from hps.cheb_utils         import *
+from scipy.linalg           import null_space
+from scipy.spatial.distance import cdist
+import scipy
+
+import sys
 
 # Define named tuples for storing partial differential operators (PDOs) and differential schemes (Ds)
 # for both 2D and 3D problems, along with indices (JJ) for domain decomposition.
@@ -71,6 +75,45 @@ def leaf_discretization_3d(a,q):
 	JJ    = JJ_3d(Jl= Jl, Jr= Jr, Ju= Ju, Jd= Jd, Jb= Jb, Jf=Jf, Ji=Ji)
 	return zz,Ds,JJ,hmin
 
+def ext_discretization_3d(a,p):
+
+	leg_nodes,_    = leggauss(p);
+	Xtmp,Ytmp      = np.meshgrid(a * leg_nodes, a * leg_nodes, indexing='ij')
+	zz_grid        = np.vstack((Xtmp.flatten(),Ytmp.flatten()))
+
+	face_size      = p**2
+	zz             = np.zeros((3,6*face_size))
+
+	JJ = JJext_3d(Jl = np.arange(face_size), Jr = np.arange(face_size,2*face_size), \
+		Jd = np.arange(2*face_size,3*face_size), Ju = np.arange(3*face_size,4*face_size),\
+		Jb = np.arange(4*face_size,5*face_size), Jf = np.arange(5*face_size,6*face_size))
+
+	zz [0,JJ.Jl] = -a
+	zz [1,JJ.Jl] = zz_grid[0]
+	zz [2,JJ.Jl] = zz_grid[1]
+
+	zz [0,JJ.Jr] = +a
+	zz [1,JJ.Jr] = zz_grid[0]
+	zz [2,JJ.Jr] = zz_grid[1]
+
+	zz [0,JJ.Jd] = zz_grid[0]
+	zz [1,JJ.Jd] = -a
+	zz [2,JJ.Jd] = zz_grid[1]
+
+	zz [0,JJ.Ju] = zz_grid[0]
+	zz [1,JJ.Ju] = +a
+	zz [2,JJ.Ju] = zz_grid[1]    
+
+	zz [0,JJ.Jb] = zz_grid[0]
+	zz [1,JJ.Jb] = zz_grid[1]
+	zz [2,JJ.Jb] = -a
+
+	zz [0,JJ.Jf] = zz_grid[0]
+	zz [1,JJ.Jf] = zz_grid[1]
+	zz [2,JJ.Jf] = +a
+
+	return zz,JJ
+
 def get_diff_ops(Ds,JJ,d):
 	if (d == 2):
 		Nl = Ds.D1[JJ.Jl]
@@ -101,7 +144,7 @@ class PatchUtils:
 		"""
 
 		self.a = a; self.p = p; self.ndim = ndim
-		self.q = p + 1 if (q <= 0) else q
+		self.q = p + 2 if (q <= 0) else q
 		assert self.q > self.p
 		self.ndim = ndim
 		self._discretize()
@@ -112,8 +155,8 @@ class PatchUtils:
 			zz_ext,self.JJ_ext                   = ext_discretization_2d (self.a,self.p)
 
 		elif (self.ndim == 3):
-			zz_tmp,self.Ds,self.JJ,self.hmin     = leaf_discretization_3d(self.a,self.q)
-			raise ValueError("param map in progress for 3d")
+			zz_int,self.Ds,self.JJ_int,self.hmin = leaf_discretization_3d(self.a,self.q)
+			zz_ext,self.JJ_ext                   = ext_discretization_3d (self.a,self.p)
 
 		else:
 			raise ValueError
@@ -129,9 +172,43 @@ class PatchUtils:
 	@property
 	def legfcheb_exterior_mat(self):
 
-		assert self.ndim == 2
-		T = legfcheb_matrix(self.p,self.q)
-		return block_diag(T,T,T,T)
+		if (self.ndim == 2):
+			T = legfcheb_matrix(self.p,self.q)
+			return block_diag(T,T,T,T)
+		else:
+			T = legfcheb_matrix_2d(self.p,self.q)
+			return block_diag(T,T,T,T,T,T)
+
+	def find_equality_constraints(self,ind_list):
+
+		zz_int = self.zz_int; q = self.q
+
+		if (self.ndim == 2):
+			face_size   = q
+			constraints = np.zeros((4,4*face_size))
+		else:
+			face_size   = q**2
+			constraints = np.zeros((12,6*face_size))
+
+		offset = 0
+		for j in range (len(ind_list)):
+			for k in range (j+1,len(ind_list)):
+
+				D = cdist(zz_int[ind_list[j]],\
+					zz_int[ind_list[k]])
+
+				inds_zero = np.where(D == 0)
+
+				if (inds_zero[0].shape[0] == 0):
+					continue
+				else:
+					constraints[offset,j*face_size+inds_zero[0]] = +1
+					constraints[offset,k*face_size+inds_zero[1]] = -1
+					offset += 1
+		assert offset == constraints.shape[0]
+
+		return constraints
+
 
 	# Input:  vector of values collocated on exterior legendre  points
 	# Output: vector of values collocated on exterior chebyshev points
@@ -139,31 +216,21 @@ class PatchUtils:
 	@property
 	def chebfleg_exterior_mat(self):
 
-		assert self.ndim == 2
-		p = self.p; q = self.q
-		Jx_stack = np.hstack((self.JJ_int.Jl, self.JJ_int.Jr,\
-			self.JJ_int.Jd, self.JJ_int.Ju))
-		zz_tmp   = self.zz_int[Jx_stack]
+		if (self.ndim == 2):
+			T                = chebfleg_matrix(self.p,self.q)
+			tmp_exterior_mat = block_diag(T,T,T,T)
 
-		T = chebfleg_matrix(self.p,self.q)
-		chebfleg_exterior_mat = block_diag(T,T,T,T)
+			constraints = self.find_equality_constraints(
+				[self.JJ_int.Jl, self.JJ_int.Jr,\
+				self.JJ_int.Jd, self.JJ_int.Ju])
+		else:
+			T                = chebfleg_matrix_2d(self.p,self.q)
+			tmp_exterior_mat = block_diag(T,T,T,T,T,T)
 
-		constraints = np.zeros((4,4*q))
-		constraints[0,0]          = 1  
-		constraints[0,2*q]        = -1 # bottom left corner
-		assert np.linalg.norm(zz_tmp[0] - zz_tmp[2*q]) < 1e-15
-
-		constraints[1,3*q-1]  = 1  
-		constraints[1,q]      = -1 # bottom right corner
-		assert np.linalg.norm(zz_tmp[3*q-1] - zz_tmp[q]) < 1e-15
-
-		constraints[2,q-1]    = 1  
-		constraints[2,3*q]    = -1 # upper left corner
-		assert np.linalg.norm(zz_tmp[q-1] - zz_tmp[3*q]) < 1e-15
-
-		constraints[3,2*q-1]  = 1  
-		constraints[3,4*q-1]  = -1 # upper right corner
-		assert np.linalg.norm(zz_tmp[2*q-1] - zz_tmp[4*q-1]) < 1e-15
+			constraints = self.find_equality_constraints(
+				[self.JJ_int.Jl, self.JJ_int.Jr,\
+				self.JJ_int.Jd, self.JJ_int.Ju,\
+				self.JJ_int.Jb, self.JJ_int.Jf])
 
 		N = null_space(constraints)
-		return N @ N.T @ chebfleg_exterior_mat
+		return N @ N.T @ tmp_exterior_mat

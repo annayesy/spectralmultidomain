@@ -47,4 +47,4 @@ pdo_mod = param_geom.transform_helmholtz_pdo(bfield_constant, kh)
 
 solver  = HPSMultidomain(pdo_mod,param_geom,a,p)
 relerr  = solver.verify_discretization(kh)
-print(relerr)
+print("relerror in 2D curved domain %5.2e" % relerr)

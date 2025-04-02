@@ -1,5 +1,6 @@
 import numpy as np
 from   hps.cheb_utils import *
+import numpy.testing as npt
 
 def test_cheb_1d():
     """
@@ -185,3 +186,38 @@ def test_cheb_3d():
     assert err_x < 1e-10, f"Max error in x-derivative: {err_x}"
     assert err_y < 1e-10, f"Max error in y-derivative: {err_y}"
     assert err_z < 1e-10, f"Max error in z-derivative: {err_z}"
+
+def test_transformation_matrices_2d_poly():
+    # Set the number of nodes in each dimension (assumed equal)
+    p = 7  # Legendre nodes per dimension
+    q = 7  # Chebyshev nodes per dimension
+
+    # Get Chebyshev nodes (assumed to be in [-1, 1])
+    cheb_nodes = cheb(q)[0]  # e.g., cheb(q) returns (nodes, weights)
+    
+    # Construct a Chebyshev grid in 2D.
+    X_cheb, Y_cheb = np.meshgrid(cheb_nodes, cheb_nodes,indexing='ij')
+    X_cheb_flat    = X_cheb.flatten()
+    Y_cheb_flat    = Y_cheb.flatten()
+    
+    # Define a simple polynomial function that is exactly representable.
+    def f(x, y):
+        return 1 + x + y
+
+    # Evaluate the function at Chebyshev nodes.
+    f_cheb = f(X_cheb_flat, Y_cheb_flat)
+
+    # Build 2D transformation matrices.
+    # T_legfcheb: maps data from Chebyshev grid to Legendre grid.
+    # T_chebfleg: maps data from Legendre grid back to Chebyshev grid.
+    T_legfcheb = legfcheb_matrix_2d(p, q)
+    T_chebfleg = chebfleg_matrix_2d(p, q)
+
+    # Transform from Chebyshev to Legendre.
+    f_leg = T_legfcheb @ f_cheb
+
+    # Transform back from Legendre to Chebyshev.
+    f_cheb_reconstructed = T_chebfleg @ f_leg
+
+    # The reconstructed values should match the original function values.
+    npt.assert_allclose(f_cheb_reconstructed, f_cheb, atol=1e-8)
