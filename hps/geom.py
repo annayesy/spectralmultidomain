@@ -1,6 +1,6 @@
 from   abc   import ABCMeta, abstractmethod, abstractproperty
 import numpy as np
-from   hps.pdo import PDO2d
+from   hps.pdo import PDO2d,PDO3d
 
 
 ############################################################################################
@@ -184,7 +184,7 @@ class ParametrizedGeometry3D(AbstractGeometry):
                     return -sum(d(yy) for d in derivs if d is not None)
             return func
 
-        def helper_mixed_deriv(derivs):
+        def helper_mixed_deriv(pairs):
             if not any(f is not None and g is not None for f, g in pairs):
                 func = None
             else:
@@ -193,8 +193,9 @@ class ParametrizedGeometry3D(AbstractGeometry):
                     result = 0
                     for f, g in pairs:
                         if f is not None and g is not None:
-                            result += 2 * np.multiply(f(yy), g(yy))
+                            result += np.multiply(f(yy), g(yy))
                     return result
+                return func
 
         c11 = helper_double_deriv([y1_d1,  y1_d2,  y1_d3])
         c22 = helper_double_deriv([y2_d1,  y2_d2,  y2_d3])
