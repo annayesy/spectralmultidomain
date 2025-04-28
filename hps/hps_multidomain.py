@@ -15,9 +15,13 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
     ndim        = npan_dim.shape[0]
     patch_utils = PatchUtils(a,p,ndim=npan_dim.shape[0])
     Jx_shape    = patch_utils.zz_ext.shape[0]
+    Ji_shape    = patch_utils.zz_int.shape[0]
 
-    xx_list     = np.zeros((np.prod(npan_dim),Jx_shape, ndim))
+    xxext_list  = np.zeros((np.prod(npan_dim),Jx_shape, ndim))
+    xxint_list  = np.zeros((np.prod(npan_dim),Ji_shape, ndim))
     DtN_list    = np.zeros((np.prod(npan_dim),Jx_shape, Jx_shape))
+
+    sub_list    = [np.array([]) for j in range(np.prod(npan_dim))]
 
     if (ndim == 2):
 
@@ -34,8 +38,10 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
 
                 box_ind  = i+j*npan_dim[0]
 
-                xx_list [box_ind] = leaf_loc.xxloc_ext
-                DtN_list[box_ind] = leaf_loc.DtN
+                xxext_list[box_ind] = leaf_loc.xxloc_ext
+                xxint_list[box_ind] = leaf_loc.xxloc_int
+                DtN_list  [box_ind] = leaf_loc.DtN
+                sub_list  [box_ind] = leaf_loc
 
     else:
 
@@ -54,10 +60,12 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
 
                     box_ind  = i + j * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
 
-                    xx_list [box_ind] = leaf_loc.xxloc_ext
-                    DtN_list[box_ind] = leaf_loc.DtN
+                    xxext_list [box_ind] = leaf_loc.xxloc_ext
+                    xxint_list [box_ind] = leaf_loc.xxloc_int
+                    DtN_list   [box_ind] = leaf_loc.DtN
+                    sub_list   [box_ind] = leaf_loc
 
-    return npan_dim,xx_list,DtN_list
+    return patch_utils,npan_dim,xxext_list,xxint_list,sub_list,DtN_list
 
 def get_duplicated_interior_points_2d(p,npan_dim):
 
@@ -159,8 +167,11 @@ class HPSMultidomain(AbstractPDESolver):
         self._geom     = geom
         self._p        = p
 
-        self.npan_dim,xx_list,self.DtN_list = get_leaf_DtNs(pdo,self._box_geom, a, self.p)
-        self._XX = xx_list.reshape(xx_list.shape[0] * xx_list.shape[1],self.ndim)
+        self.patch_utils,self.npan_dim,xxext_list,xxint_list,\
+        self.sub_list,DtN_list = get_leaf_DtNs(pdo,self._box_geom, a, self.p)
+        
+        self._XX     = xxext_list.reshape(xxext_list.shape[0] * xxext_list.shape[1],self.ndim)
+        self._XXfull = xxint_list.reshape(xxint_list.shape[0] * xxint_list.shape[1],self.ndim)
 
         if  (self.ndim == 2):
             self._Jcopy1,self._Jcopy2 = \
@@ -175,8 +186,8 @@ class HPSMultidomain(AbstractPDESolver):
             np.union1d(self._Jcopy1,self._Jcopy2))
         self._Ji = self._Jcopy1
 
-        A    = block_diag(tuple(self.DtN_list),format='csr')
-        del self.DtN_list
+        A    = block_diag(tuple(DtN_list),format='csr')
+        del DtN_list
 
         #### accumulate coo matrix
         Aii = CSRBuilder(self._Jcopy1.shape[0],\
@@ -204,6 +215,23 @@ class HPSMultidomain(AbstractPDESolver):
         self._Axi      = Axi
         self._Axx      = A[self.Jx][:,self.Jx]
 
+    def solve_dir_full(self,uu_dir):
+
+        assert uu_dir.ndim == 2
+        nrhs       = uu_dir.shape[-1]
+
+        uu_sol_bnd = np.zeros((self._XX.shape[0],nrhs))
+        uu_sol_bnd[self._Jcopy1] = self.solve_dir(uu_dir)
+        uu_sol_bnd[self._Jcopy2] = uu_sol_bnd[self._Jcopy1]
+        uu_sol_bnd[self._Jx]     = uu_dir
+
+        uu_sol_bnd = uu_sol_bnd.reshape(np.prod(self.npan_dim),self.patch_utils.zz_ext.shape[0],nrhs)
+        uu_sol_int = np.zeros((np.prod(self.npan_dim),self.patch_utils.zz_int.shape[0],nrhs))
+
+        for j in range(np.prod(self.npan_dim)):
+            uu_sol_int[j] = self.sub_list[j].solve_dir(uu_sol_bnd[j])
+        return uu_sol_int.reshape(self._XXfull.shape[0],nrhs)
+        
     @property
     def npoints_dim(self):
         return self.npan_dim * self.p

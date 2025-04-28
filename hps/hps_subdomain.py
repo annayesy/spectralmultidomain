@@ -83,6 +83,7 @@ class LeafSubdomain:
         return get_Aloc(self.pdo,self.xxloc_int,self.diff_ops)
 
     def solve_dir(self,uu_dir,ff_body=None):
+        assert ff_body is None
 
         if (self.utils.ndim == 2):
 
