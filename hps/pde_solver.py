@@ -83,17 +83,18 @@ class AbstractPDESolver(metaclass=ABCMeta):
 		ppw_ndim = self.npoints_dim / self.get_nwaves_dim(kh)
 		return ppw_ndim
 
-	def solve_dir(self,uu_dir):
-
-		# body load non-zero functionality
-		# will be added later
+	def solve_dir(self,uu_dir,ff_body=None):
 
 		if (uu_dir.ndim == 1):
 			uu_tmp = uu_dir[:,np.newaxis]
 		else:
 			uu_tmp = uu_dir
+		nrhs = uu_tmp.shape[-1]
 
-		result = - self.solver_Aii ( self.Aix @ uu_tmp)
+		if (ff_body is None):
+			ff_body = np.zeros((self.Ji.shape[0],nrhs))
+
+		result = self.solver_Aii ( ff_body - self.Aix @ uu_tmp)
 
 		if (uu_dir.ndim == 1):
 			result = result.flatten()

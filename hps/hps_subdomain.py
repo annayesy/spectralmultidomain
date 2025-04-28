@@ -83,7 +83,6 @@ class LeafSubdomain:
         return get_Aloc(self.pdo,self.xxloc_int,self.diff_ops)
 
     def solve_dir(self,uu_dir,ff_body=None):
-        assert ff_body is None
 
         if (self.utils.ndim == 2):
 
@@ -103,13 +102,20 @@ class LeafSubdomain:
 
         Aloc = self.Aloc
         if (ff_body is None):
-            ff_body = np.zeros((Ji.shape[0],nrhs))
+            ff_body = np.zeros((self.xxloc_int.shape[0],nrhs))
 
         res[Jx_stack] = self.chebfleg_mat @ uu_dir
         res[Ji]       = np.linalg.solve(Aloc[Ji][:,Ji], \
-            ff_body - Aloc[Ji][:,Jx] @ res[Jx])
+            ff_body[Ji] - Aloc[Ji][:,Jx] @ res[Jx])
 
         return res
+
+    def reduce_body_load(self,ff_body):
+
+        Nx_stack = self.utils.Nx_stack
+
+        loc_sol  = self.solve_dir(np.zeros((self.xxloc_ext.shape[0],1)),-ff_body)
+        return self.legfcheb_mat @ (Nx_stack @ loc_sol)
 
     @property
     def DtN(self):

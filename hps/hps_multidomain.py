@@ -215,21 +215,39 @@ class HPSMultidomain(AbstractPDESolver):
         self._Axi      = Axi
         self._Axx      = A[self.Jx][:,self.Jx]
 
-    def solve_dir_full(self,uu_dir):
+    def solve_dir_full(self,uu_dir,ff_body=None):
 
         assert uu_dir.ndim == 2
         nrhs       = uu_dir.shape[-1]
 
-        uu_sol_bnd = np.zeros((self._XX.shape[0],nrhs))
-        uu_sol_bnd[self._Jcopy1] = self.solve_dir(uu_dir)
+        if (ff_body is None):
+            ff_body = np.zeros((self._XXfull.shape[0],nrhs))
+
+        # Reduce body load to the interfaces
+            
+        ff_body = ff_body.reshape(np.prod(self.npan_dim),self.patch_utils.zz_int.shape[0],nrhs)
+        ff_red  = np.zeros((np.prod(self.npan_dim),self.patch_utils.zz_ext.shape[0],nrhs))
+        
+        for j in range(np.prod(self.npan_dim)):
+            ff_red[j] = self.sub_list[j].reduce_body_load(ff_body[j])
+
+        ff_red  = ff_red.reshape((self._XX.shape[0],nrhs))
+        ff_dup  = ff_red[self._Jcopy1] + ff_red[self._Jcopy2]
+
+        # Solve the PDE on the interfaces with modified body load
+
+        uu_sol_bnd = np.zeros((self._XX.shape[0],nrhs))        
+        uu_sol_bnd[self._Jcopy1] = self.solve_dir(uu_dir,ff_dup)
         uu_sol_bnd[self._Jcopy2] = uu_sol_bnd[self._Jcopy1]
         uu_sol_bnd[self._Jx]     = uu_dir
+
+        # Solve the PDE on the subdomains with solution on bnd and original body load
 
         uu_sol_bnd = uu_sol_bnd.reshape(np.prod(self.npan_dim),self.patch_utils.zz_ext.shape[0],nrhs)
         uu_sol_int = np.zeros((np.prod(self.npan_dim),self.patch_utils.zz_int.shape[0],nrhs))
 
         for j in range(np.prod(self.npan_dim)):
-            uu_sol_int[j] = self.sub_list[j].solve_dir(uu_sol_bnd[j])
+            uu_sol_int[j] = self.sub_list[j].solve_dir(uu_sol_bnd[j],ff_body[j])
         return uu_sol_int.reshape(self._XXfull.shape[0],nrhs)
         
     @property
