@@ -115,7 +115,7 @@ class LeafSubdomain:
         Nx_stack = self.utils.Nx_stack
 
         loc_sol  = self.solve_dir(np.zeros((self.xxloc_ext.shape[0],1)),-ff_body)
-        return self.legfcheb_mat @ (Nx_stack @ loc_sol)
+        return self.legfcheb_mat @ (Nx_stack[:,self.JJ_int.Ji] @ loc_sol[self.JJ_int.Ji])
 
     @property
     def DtN(self):
