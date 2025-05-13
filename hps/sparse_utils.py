@@ -7,6 +7,7 @@ try:
 	petsc_imported = True
 	print("PETSC IMPORTED")
 except:
+	print("PETSC NOT IMPORTED")	
 	petsc_imported = False
 
 def petscdense_to_nparray(pM):

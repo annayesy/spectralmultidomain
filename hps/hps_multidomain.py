@@ -84,9 +84,11 @@ def get_duplicated_interior_points_2d(p,npan_dim):
                 prev_box = (i-1) + j * npan_dim[0]
 
                 # right boundary of previous box
-                Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) + prev_box*size_ext + 1*size_bnd
+                Icopy1[offset: offset+size_bnd] = \
+                np.arange(size_bnd) + prev_box*size_ext + 1*size_bnd
                 # left boundary of current box
-                Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) + curr_box*size_ext + 0*size_bnd
+                Icopy2[offset: offset+size_bnd] = \
+                np.arange(size_bnd) + curr_box*size_ext + 0*size_bnd
 
                 offset += size_bnd
 
@@ -94,9 +96,11 @@ def get_duplicated_interior_points_2d(p,npan_dim):
                 prev_box = i + (j-1) * npan_dim[0]
 
                 # up   boundary of previous box
-                Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) + prev_box*size_ext + 3*size_bnd
+                Icopy1[offset: offset+size_bnd] = \
+                np.arange(size_bnd) + prev_box*size_ext + 3*size_bnd
                 # down boundary of current box
-                Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) + curr_box*size_ext + 2*size_bnd
+                Icopy2[offset: offset+size_bnd] = \
+                np.arange(size_bnd) + curr_box*size_ext + 2*size_bnd
 
                 offset += size_bnd
 
@@ -120,9 +124,11 @@ def get_duplicated_interior_points_3d(p,npan_dim):
                     prev_box = (i-1) + j * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
 
                     # right boundary of previous box
-                    Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) + prev_box*size_ext + 1*size_bnd
+                    Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) \
+                    + prev_box*size_ext + 1*size_bnd
                     # left boundary of current box
-                    Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) + curr_box*size_ext + 0*size_bnd
+                    Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) \
+                    + curr_box*size_ext + 0*size_bnd
 
                     offset += size_bnd
 
@@ -130,9 +136,11 @@ def get_duplicated_interior_points_3d(p,npan_dim):
                     prev_box = i + (j-1) * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
 
                     # up   boundary of previous box
-                    Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) + prev_box*size_ext + 3*size_bnd
+                    Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) \
+                    + prev_box*size_ext + 3*size_bnd
                     # down boundary of current box
-                    Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) + curr_box*size_ext + 2*size_bnd
+                    Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) \
+                    + curr_box*size_ext + 2*size_bnd
 
                     offset += size_bnd
 
@@ -140,9 +148,11 @@ def get_duplicated_interior_points_3d(p,npan_dim):
                     prev_box = i + j * npan_dim[0] + (k-1) * npan_dim[0] * npan_dim[1]
 
                     # fron boundary of previous box
-                    Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) + prev_box*size_ext + 5*size_bnd
+                    Icopy1[offset: offset+size_bnd] = np.arange(size_bnd) \
+                    + prev_box*size_ext + 5*size_bnd
                     # back boundary of current box
-                    Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) + curr_box*size_ext + 4*size_bnd
+                    Icopy2[offset: offset+size_bnd] = np.arange(size_bnd) \
+                    + curr_box*size_ext + 4*size_bnd
 
                     offset += size_bnd
 
@@ -170,8 +180,10 @@ class HPSMultidomain(AbstractPDESolver):
         self.patch_utils,self.npan_dim,xxext_list,xxint_list,\
         self.sub_list,DtN_list = get_leaf_DtNs(pdo,self._box_geom, a, self.p)
         
-        self._XX     = xxext_list.reshape(xxext_list.shape[0] * xxext_list.shape[1],self.ndim)
-        self._XXfull = xxint_list.reshape(xxint_list.shape[0] * xxint_list.shape[1],self.ndim)
+        self._XX     = xxext_list.reshape(xxext_list.shape[0] * \
+            xxext_list.shape[1],self.ndim)
+        self._XXfull = xxint_list.reshape(xxint_list.shape[0] * \
+            xxint_list.shape[1],self.ndim)
 
         if  (self.ndim == 2):
             self._Jcopy1,self._Jcopy2 = \
@@ -225,8 +237,10 @@ class HPSMultidomain(AbstractPDESolver):
 
         # Reduce body load to the interfaces
             
-        ff_body = ff_body.reshape(np.prod(self.npan_dim),self.patch_utils.zz_int.shape[0],nrhs)
-        ff_red  = np.zeros((np.prod(self.npan_dim),self.patch_utils.zz_ext.shape[0],nrhs))
+        ff_body = ff_body.reshape(np.prod(self.npan_dim),\
+            self.patch_utils.zz_int.shape[0],nrhs)
+        ff_red  = np.zeros((np.prod(self.npan_dim),\
+            self.patch_utils.zz_ext.shape[0],nrhs))
         
         for j in range(np.prod(self.npan_dim)):
             ff_red[j] = self.sub_list[j].reduce_body_load(ff_body[j])
@@ -243,8 +257,10 @@ class HPSMultidomain(AbstractPDESolver):
 
         # Solve the PDE on the subdomains with solution on bnd and original body load
 
-        uu_sol_bnd = uu_sol_bnd.reshape(np.prod(self.npan_dim),self.patch_utils.zz_ext.shape[0],nrhs)
-        uu_sol_int = np.zeros((np.prod(self.npan_dim),self.patch_utils.zz_int.shape[0],nrhs))
+        uu_sol_bnd = uu_sol_bnd.reshape(np.prod(self.npan_dim),\
+            self.patch_utils.zz_ext.shape[0],nrhs)
+        uu_sol_int = np.zeros((np.prod(self.npan_dim),\
+            self.patch_utils.zz_int.shape[0],nrhs))
 
         for j in range(np.prod(self.npan_dim)):
             uu_sol_int[j] = self.sub_list[j].solve_dir(uu_sol_bnd[j],ff_body[j])

@@ -8,15 +8,16 @@ import scipy
 
 import sys
 
-# Define named tuples for storing partial differential operators (PDOs) and differential schemes (Ds)
-# for both 2D and 3D problems, along with indices (JJ) for domain decomposition.
+# Define named tuples for storing partial differential operators (PDOs) 
+# and differential schemes (Ds) for both 2D and 3D problems, 
+# along with indices (JJ) for domain decomposition.
 
 JJ_2d    = namedtuple('JJ_2d',    ['Jl','Jr','Jd','Ju','Ji'])
 JJext_2d = namedtuple('JJext_2d', ['Jl','Jr','Jd','Ju'])
 JJ_3d    = namedtuple('JJ_3d',    ['Jl','Jr','Jd','Ju','Jb','Jf','Ji'])
 JJext_3d = namedtuple('JJ_3d',    ['Jl','Jr','Jd','Ju','Jb','Jf'])
 
-#################################### Discretization utils for 2d and 3d ##########################################
+######################## Discretization utils for 2d and 3d ########################
 
 def leaf_discretization_2d(a,q):
 	zz,Ds = cheb_2d(a,q)
