@@ -10,6 +10,6 @@ setup(
     author_email='annayesy@utexas.edu',
     url='https://github.com/annayesy/spectralmultidomain.py',
     install_requires=[
-        'numpy','matplotlib','scipy',
+        'numpy','matplotlib','scipy', 'jax', 'pytest'
     ],
 )

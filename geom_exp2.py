@@ -48,6 +48,13 @@ def bfield_constant(xx,kh):
 
 pdo_mod = param_geom.transform_helmholtz_pdo(bfield_constant, kh)
 
+tic     = time()
 solver  = HPSMultidomain(pdo_mod,param_geom,a,p)
+toc_dtn = time() - tic
+
+tic     = time()
+solver.setup_solver_Aii()
+toc_sp  = time() - tic
+
 relerr  = solver.verify_discretization(kh)
-print("relerror in 3D curved domain %5.2e" % relerr)
+print("\t Setup time (%5.2f s +  %5.2f s); relerror in 3D curved domain %5.2e" % (toc_dtn,toc_sp,relerr))
