@@ -29,7 +29,7 @@ def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 		pdo = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
 	else:
 		pdo = PDO3d(c11=const(1.0),c22=const(1.0),c33=const(1.0),c=const(-kh**2)) 
-	leaf_subdomain = LeafSubdomain(box_geom, pdo, patch_utils)
+	leaf_subdomain = LeafSubdomain(box_geom[0] + a, pdo, patch_utils)
 
 	helper_test_bounds(leaf_subdomain.xxloc_int,box_geom)
 	helper_test_bounds(leaf_subdomain.xxloc_ext,box_geom)
@@ -133,7 +133,7 @@ def test_leaf_subdomain_projection_and_solution(ndim):
         patch_utils = PatchUtils(a, p, ndim=3)
         pdo = PDO3d(c11=const(1.0), c22=const(1.0), c33=const(1.0), c=const(-kh**2))
 
-    leaf = LeafSubdomain(box_geom, pdo, patch_utils)
+    leaf = LeafSubdomain(box_geom[0]+a, pdo, patch_utils)
     xx_int = leaf.xxloc_int
     xx_ext = leaf.xxloc_ext
 
@@ -181,7 +181,7 @@ def test_leaf_subdomain_dtn_neumann(ndim):
     patch_utils = PatchUtils(a, p, ndim=2)
     pdo = PDO2d(c11=const(1.0), c22=const(1.0), c=const(-kh**2))
 
-    leaf = LeafSubdomain(box_geom, pdo, patch_utils)
+    leaf = LeafSubdomain(box_geom[0]+a, pdo, patch_utils)
     xx_ext = leaf.xxloc_ext
     uu_ext = get_known_greens(xx_ext, kh=0, center=np.zeros(2,))
 

@@ -52,21 +52,13 @@ def get_Aloc(pdo,xxloc,Ds):
 
 class LeafSubdomain:
 
-    def __init__(self,box_geom,pdo,patch_utils):
+    def __init__(self,box_center,pdo,patch_utils):
 
-        lim_max = box_geom[1]
-        lim_min = box_geom[0]
-
-        box_len = lim_max - lim_min
-        c       = box_len * 0.5 + lim_min
-
-        assert np.abs( box_len[0] - 2 * patch_utils.a[0]) < 1e-14
-        assert np.abs( box_len[1] - 2 * patch_utils.a[1]) < 1e-14
-        assert box_geom.shape[-1] == patch_utils.ndim
+        assert box_center.shape[-1] == patch_utils.ndim
 
         self.pdo       = pdo
-        self.xxloc_int = patch_utils.zz_int + c
-        self.xxloc_ext = patch_utils.zz_ext + c
+        self.xxloc_int = patch_utils.zz_int + box_center
+        self.xxloc_ext = patch_utils.zz_ext + box_center
         self.diff_ops  = patch_utils.Ds
         self.p         = patch_utils.p
         self.utils     = patch_utils

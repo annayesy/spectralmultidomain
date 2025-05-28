@@ -34,8 +34,7 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
                 root_loc[0] = 2 * a[0] * i + box_geom[0,0]
                 root_loc[1] = 2 * a[1] * j + box_geom[0,1]
 
-                box_loc  = np.vstack((root_loc,root_loc+2*a))
-                leaf_loc = LeafSubdomain(box_loc,pdo,patch_utils)
+                leaf_loc = LeafSubdomain(root_loc+a,pdo,patch_utils)
 
                 box_ind  = i+j*npan_dim[0]
 
@@ -56,8 +55,7 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
                     root_loc[1] = 2 * a[1] * j + box_geom[0,1]
                     root_loc[2] = 2 * a[2] * k + box_geom[0,2]
 
-                    box_loc  = np.vstack((root_loc,root_loc+2*a))
-                    leaf_loc = LeafSubdomain(box_loc,pdo,patch_utils)
+                    leaf_loc = LeafSubdomain(root_loc + a,pdo,patch_utils)
 
                     box_ind  = i + j * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
 
