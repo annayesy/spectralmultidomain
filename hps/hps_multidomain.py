@@ -11,7 +11,6 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
     len_dim  = box_geom[1] - box_geom[0]
     npan_dim = np.round( len_dim / (2*a)).astype(int)
 
-    print(npan_dim)
     assert np.linalg.norm(npan_dim * (2*a) - len_dim,ord=2) < 1e-14
 
     ndim        = npan_dim.shape[0]

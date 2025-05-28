@@ -82,7 +82,8 @@ def ext_discretization_2d(a,p):
 
 def leaf_discretization_3d(a,q):
 	zz,Ds = cheb_3d(a,q)
-	hmin  = zz[2,1] - zz[2,0]
+	hmin  = min( np.max(np.abs(zz[:,1]-zz[:,0])), \
+		np.max(np.abs(zz[:,q]-zz[:,0])), np.max((np.abs(zz[:,q**2]-zz[:,0]))) )
 
 	Jc0   = np.abs(zz[0,:]) < a[0] - 0.5*hmin
 	Jc1   = np.abs(zz[1,:]) < a[1] - 0.5*hmin
