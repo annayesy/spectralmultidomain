@@ -60,8 +60,8 @@ class LeafSubdomain:
         box_len = lim_max - lim_min
         c       = box_len * 0.5 + lim_min
 
-        assert np.abs( np.min(box_len) - 2 * patch_utils.a) < 1e-14
-        assert np.abs( np.max(box_len) - 2 * patch_utils.a) < 1e-14
+        assert np.abs( box_len[0] - 2 * patch_utils.a[0]) < 1e-14
+        assert np.abs( box_len[1] - 2 * patch_utils.a[1]) < 1e-14
         assert box_geom.shape[-1] == patch_utils.ndim
 
         self.pdo       = pdo

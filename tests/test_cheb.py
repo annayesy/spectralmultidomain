@@ -28,7 +28,7 @@ def test_cheb_2d():
       f_y = -cos(x)*sin(y)
     """
     p = 20
-    a = 1.0
+    a = np.array([1.0,1.0])
     zz, Ds = cheb_2d(a, p)
     # Reshape grid for evaluation.
     xvec = zz[0, :].reshape(p, p)
@@ -152,7 +152,7 @@ def test_cheb_3d():
       f_z = -cos(x)*cos(y)*sin(z)
     """
     p = 20
-    a = 1.0
+    a = np.array([1.0,1.0,1.0])
     grid, Ds = cheb_3d(a, p)
     
     # Reshape grid for evaluation.

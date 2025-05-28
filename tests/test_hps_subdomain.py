@@ -23,7 +23,7 @@ def helper_test_bounds(xx,box_geom):
 def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 
 	ndim           = box_geom.shape[-1]
-	patch_utils    = PatchUtils(a,p,ndim=ndim)
+	patch_utils    = PatchUtils(np.ones(ndim) * a,p,ndim=ndim)
 
 	if (ndim == 2):
 		pdo = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
@@ -45,13 +45,13 @@ def solve_helmholtz_on_patch(box_geom, a, p, kh=0, savefig=False):
 
 def test_laplace_2dpatch():
 
-	box_geom = np.array([[0,0],[1,1]]); a = 0.5
+	box_geom = np.array([[0,0],[1,1]]); a = np.array([0.5,0.5])
 	p = 8
 	relerr = solve_helmholtz_on_patch(box_geom,a,p,savefig=False)
 	assert relerr < 1e-10
 
 def test_helmholtz_2dpatch():
-	box_geom = np.array([[0.25,0],[0.75,0.5]]); a = 0.25
+	box_geom = np.array([[0.25,0],[0.75,0.5]]); a = np.array([0.25,0.25])
 	p = 18
 	relerr = solve_helmholtz_on_patch(box_geom,a,p,kh=10,savefig=True)
 	assert relerr < 1e-10
@@ -120,14 +120,14 @@ from hps.hps_subdomain import LeafSubdomain
 def test_leaf_subdomain_projection_and_solution(ndim):
     if ndim == 2:
         box_geom = np.array([[0.5, 0.25], [1.0, 0.75]])
-        a = 0.25
+        a = np.array([0.25,0.25])
         p = 20
         kh = 0
         patch_utils = PatchUtils(a, p, ndim=2)
         pdo = PDO2d(c11=const(1.0), c22=const(1.0), c=const(-kh**2))
     else:
         box_geom = np.array([[0.5, 0.25, 0.25], [1.0, 0.75, 0.75]])
-        a = 0.25
+        a = np.array([0.25,0.25,0.25])
         p = 10
         kh = 0
         patch_utils = PatchUtils(a, p, ndim=3)
@@ -175,7 +175,7 @@ def test_leaf_subdomain_projection_and_solution(ndim):
 def test_leaf_subdomain_dtn_neumann(ndim):
     # Only defined for 2D in the original block
     box_geom = np.array([[0.5, 0.25], [1.0, 0.75]])
-    a = 0.25
+    a = np.array([0.25,0.25])
     p = 20
     kh = 0
     patch_utils = PatchUtils(a, p, ndim=2)

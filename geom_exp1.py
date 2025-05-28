@@ -8,7 +8,7 @@ from hps.fd_discretization import FDDiscretization
 from time import time
 from matplotlib import pyplot as plt
 
-a = 1/8; p = 8; kh = 2; ndim = 3
+p = 8; kh = 2; ndim = 3
 
 if (ndim == 2):
 	pdo         = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
@@ -21,11 +21,16 @@ else:
 
 if (p > 2):
 
+	a         = np.array([1/16,1/8]) if ndim == 2 else np.array([1/16,1/8,1/32])
+
 	tic       = time()
 	solver    = HPSMultidomain(pdo,geom,a,p)
 	toc_dtn   = time() - tic
 
 else:
+
+	a         = 1/100
+
 	tic       = time()
 	solver    = FDDiscretization(pdo,geom,a)
 	toc_dtn   = time() - tic

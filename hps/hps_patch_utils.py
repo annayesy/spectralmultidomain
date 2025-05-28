@@ -8,6 +8,8 @@ import scipy
 
 import sys
 
+from matplotlib import pyplot as plt
+
 # Define named tuples for storing partial differential operators (PDOs) 
 # and differential schemes (Ds) for both 2D and 3D problems, 
 # along with indices (JJ) for domain decomposition.
@@ -19,20 +21,42 @@ JJext_3d = namedtuple('JJ_3d',    ['Jl','Jr','Jd','Ju','Jb','Jf'])
 
 ######################## Discretization utils for 2d and 3d ########################
 
+def min_axis_aligned_gap(pts):
+    """
+    pts: an (N, d) array of point coordinates
+    Returns:
+      mins_per_dim: length-d array, where mins_per_dim[k]
+                    is the smallest |x_i[k] - x_j[k]| over all i<j
+      overall_min: the single smallest axis-aligned gap min_k mins_per_dim[k]
+    """
+    pts = np.asarray(pts)
+    # sort each column (axis)
+    sorted_by_dim = np.sort(pts, axis=0)        # shape (N,d)
+    # compute differences between neighbors along each column
+    diffs = np.diff(sorted_by_dim, axis=0)      # shape (N-1, d)
+    # the minimum gap in each dimension
+    mins_per_dim = diffs.min(axis=0)            # shape (d,)
+    # the overall smallest axis-aligned gap
+    overall_min = mins_per_dim.min()
+    return overall_min
+
 def leaf_discretization_2d(a,q):
 	zz,Ds = cheb_2d(a,q)
-	hmin  = zz[1,1] - zz[0,1]
 
-	Jc0   = np.abs(zz[0,:]) < a - 0.5*hmin
-	Jc1   = np.abs(zz[1,:]) < a - 0.5*hmin
-	Jl    = np.argwhere(zz[0,:] < - a + 0.5 * hmin).reshape(q,)
-	Jr    = np.argwhere(zz[0,:] > + a - 0.5 * hmin).reshape(q,)
-	Jd    = np.argwhere(zz[1,:] < - a + 0.5 * hmin).reshape(q,)
-	Ju    = np.argwhere(zz[1,:] > + a - 0.5 * hmin).reshape(q,)
+	hmin  = min( np.max(np.abs(zz[:,1]-zz[:,0])), \
+		np.max(np.abs(zz[:,q]-zz[:,0])) ) 
+
+	Jc0   = np.abs(zz[0,:]) < a[0] - 0.5*hmin
+	Jc1   = np.abs(zz[1,:]) < a[1] - 0.5*hmin
+	Jl    = np.argwhere(zz[0,:] < - a[0] + 0.5 * hmin).reshape(q,)
+	Jr    = np.argwhere(zz[0,:] > + a[0] - 0.5 * hmin).reshape(q,)
+	Jd    = np.argwhere(zz[1,:] < - a[1] + 0.5 * hmin).reshape(q,)
+	Ju    = np.argwhere(zz[1,:] > + a[1] - 0.5 * hmin).reshape(q,)
 
 	Ji    = np.argwhere(np.logical_and(Jc0,Jc1)).reshape((q-2)**2,)
 	
 	JJ    = JJ_2d(Jl= Jl, Jr= Jr, Ju= Ju, Jd= Jd, Ji = Ji)
+
 	return zz,Ds,JJ,hmin
 
 def ext_discretization_2d(a,p):
@@ -40,36 +64,35 @@ def ext_discretization_2d(a,p):
 	leg_nodes,_    = leggauss(p);
 	zz             = np.zeros((2,4*p))
 
-	zz [0,0*p:1*p] = -a                # left
-	zz [1,0*p:1*p] = a * leg_nodes     # left
+	zz [0,0*p:1*p] = -a[0]                # left
+	zz [1,0*p:1*p] = a[1] * leg_nodes     # left
 
-	zz [0,1*p:2*p] = +a                # right
-	zz [1,1*p:2*p] = a * leg_nodes     # right
+	zz [0,1*p:2*p] = +a[0]                # right
+	zz [1,1*p:2*p] = a[1] * leg_nodes     # right
 
-	zz [0,2*p:3*p] = a * leg_nodes     # down
-	zz [1,2*p:3*p] = -a                # down
+	zz [0,2*p:3*p] = a[0] * leg_nodes     # down
+	zz [1,2*p:3*p] = -a[1]                # down
 
-	zz [0,3*p:4*p] = a * leg_nodes     # up
-	zz [1,3*p:4*p] = +a                # up
+	zz [0,3*p:4*p] = a[0] * leg_nodes     # up
+	zz [1,3*p:4*p] = +a[1]                # up
 
 	JJ = JJext_2d(Jl = np.arange(p), Jr = np.arange(p,2*p), \
 		Jd = np.arange(2*p,3*p), Ju = np.arange(3*p,4*p))
-
 	return zz,JJ
 
 def leaf_discretization_3d(a,q):
 	zz,Ds = cheb_3d(a,q)
 	hmin  = zz[2,1] - zz[2,0]
 
-	Jc0   = np.abs(zz[0,:]) < a - 0.5*hmin
-	Jc1   = np.abs(zz[1,:]) < a - 0.5*hmin
-	Jc2   = np.abs(zz[2,:]) < a - 0.5*hmin
-	Jl    = np.argwhere(zz[0,:] < - a + 0.5 * hmin).reshape(q**2,)
-	Jr    = np.argwhere(zz[0,:] > + a - 0.5 * hmin).reshape(q**2,)
-	Jd    = np.argwhere(zz[1,:] < - a + 0.5 * hmin).reshape(q**2,)
-	Ju    = np.argwhere(zz[1,:] > + a - 0.5 * hmin).reshape(q**2,)
-	Jb    = np.argwhere(zz[2,:] < - a + 0.5 * hmin).reshape(q**2,)
-	Jf    = np.argwhere(zz[2,:] > + a - 0.5 * hmin).reshape(q**2,)
+	Jc0   = np.abs(zz[0,:]) < a[0] - 0.5*hmin
+	Jc1   = np.abs(zz[1,:]) < a[1] - 0.5*hmin
+	Jc2   = np.abs(zz[2,:]) < a[2] - 0.5*hmin
+	Jl    = np.argwhere(zz[0,:] < - a[0] + 0.5 * hmin).reshape(q**2,)
+	Jr    = np.argwhere(zz[0,:] > + a[0] - 0.5 * hmin).reshape(q**2,)
+	Jd    = np.argwhere(zz[1,:] < - a[1] + 0.5 * hmin).reshape(q**2,)
+	Ju    = np.argwhere(zz[1,:] > + a[1] - 0.5 * hmin).reshape(q**2,)
+	Jb    = np.argwhere(zz[2,:] < - a[2] + 0.5 * hmin).reshape(q**2,)
+	Jf    = np.argwhere(zz[2,:] > + a[2] - 0.5 * hmin).reshape(q**2,)
 
 	Ji    = np.argwhere(np.logical_and(Jc0,np.logical_and(Jc1,Jc2))).reshape((q-2)**3,)
 
@@ -79,9 +102,6 @@ def leaf_discretization_3d(a,q):
 def ext_discretization_3d(a,p):
 
 	leg_nodes,_    = leggauss(p);
-	Xtmp,Ytmp      = np.meshgrid(a * leg_nodes, a * leg_nodes, indexing='ij')
-	zz_grid        = np.vstack((Xtmp.flatten(),Ytmp.flatten()))
-
 	face_size      = p**2
 	zz             = np.zeros((3,6*face_size))
 
@@ -89,29 +109,38 @@ def ext_discretization_3d(a,p):
 		Jd = np.arange(2*face_size,3*face_size), Ju = np.arange(3*face_size,4*face_size),\
 		Jb = np.arange(4*face_size,5*face_size), Jf = np.arange(5*face_size,6*face_size))
 
-	zz [0,JJ.Jl] = -a
+	Xtmp,Ytmp      = np.meshgrid(a[1] * leg_nodes, a[2] * leg_nodes, indexing='ij')
+	zz_grid        = np.vstack((Xtmp.flatten(),Ytmp.flatten()))
+
+	zz [0,JJ.Jl] = -a[0]
 	zz [1,JJ.Jl] = zz_grid[0]
 	zz [2,JJ.Jl] = zz_grid[1]
 
-	zz [0,JJ.Jr] = +a
+	zz [0,JJ.Jr] = +a[0]
 	zz [1,JJ.Jr] = zz_grid[0]
 	zz [2,JJ.Jr] = zz_grid[1]
 
+	Xtmp,Ytmp      = np.meshgrid(a[0] * leg_nodes, a[2] * leg_nodes, indexing='ij')
+	zz_grid        = np.vstack((Xtmp.flatten(),Ytmp.flatten()))
+
 	zz [0,JJ.Jd] = zz_grid[0]
-	zz [1,JJ.Jd] = -a
+	zz [1,JJ.Jd] = -a[1]
 	zz [2,JJ.Jd] = zz_grid[1]
 
 	zz [0,JJ.Ju] = zz_grid[0]
-	zz [1,JJ.Ju] = +a
-	zz [2,JJ.Ju] = zz_grid[1]    
+	zz [1,JJ.Ju] = +a[1]
+	zz [2,JJ.Ju] = zz_grid[1]
+
+	Xtmp,Ytmp      = np.meshgrid(a[0] * leg_nodes, a[1] * leg_nodes, indexing='ij')
+	zz_grid        = np.vstack((Xtmp.flatten(),Ytmp.flatten()))
 
 	zz [0,JJ.Jb] = zz_grid[0]
 	zz [1,JJ.Jb] = zz_grid[1]
-	zz [2,JJ.Jb] = -a
+	zz [2,JJ.Jb] = -a[2]
 
 	zz [0,JJ.Jf] = zz_grid[0]
 	zz [1,JJ.Jf] = zz_grid[1]
-	zz [2,JJ.Jf] = +a
+	zz [2,JJ.Jf] = +a[2]
 
 	return zz,JJ
 

@@ -10,6 +10,8 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
 
     len_dim  = box_geom[1] - box_geom[0]
     npan_dim = np.round( len_dim / (2*a)).astype(int)
+
+    print(npan_dim)
     assert np.linalg.norm(npan_dim * (2*a) - len_dim,ord=2) < 1e-14
 
     ndim        = npan_dim.shape[0]
@@ -30,8 +32,8 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
 
                 root_loc    = np.zeros(ndim,)
 
-                root_loc[0] = 2 * a * i + box_geom[0,0]
-                root_loc[1] = 2 * a * j + box_geom[0,1]
+                root_loc[0] = 2 * a[0] * i + box_geom[0,0]
+                root_loc[1] = 2 * a[1] * j + box_geom[0,1]
 
                 box_loc  = np.vstack((root_loc,root_loc+2*a))
                 leaf_loc = LeafSubdomain(box_loc,pdo,patch_utils)
@@ -51,9 +53,9 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
 
                     root_loc    = np.zeros(ndim,)
 
-                    root_loc[0] = 2 * a * i + box_geom[0,0]
-                    root_loc[1] = 2 * a * j + box_geom[0,1]
-                    root_loc[2] = 2 * a * k + box_geom[0,2]
+                    root_loc[0] = 2 * a[0] * i + box_geom[0,0]
+                    root_loc[1] = 2 * a[1] * j + box_geom[0,1]
+                    root_loc[2] = 2 * a[2] * k + box_geom[0,2]
 
                     box_loc  = np.vstack((root_loc,root_loc+2*a))
                     leaf_loc = LeafSubdomain(box_loc,pdo,patch_utils)
@@ -172,6 +174,17 @@ class HPSMultidomain(AbstractPDESolver):
         - a (float): Characteristic length scale for the domain.
         - p (int): Polynomial degree for spectral methods or discretization parameter.
         """
+
+        ndim = geom.bounds.shape[-1]
+        a    = np.array(a,dtype=float)
+        if a.ndim == 0:
+            # scalar → [a, a, ..., a]
+            a = np.full(ndim, a)
+        elif a.ndim == 1 and a.shape[0] == ndim:
+            # already the right shape
+            a = a.copy()
+        else:
+            raise ValueError(f"'a' must be a scalar or length-{ndim} array; got shape {a.shape}")
 
         self._box_geom = geom.bounds
         self._geom     = geom

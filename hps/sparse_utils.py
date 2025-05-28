@@ -102,8 +102,8 @@ class SparseSolver:
 		if (self.use_petsc):
 			niter= self.ksp.getIterationNumber()
 
-			print("\t use_approx = %s, time to solve %5.2e with relerr %5.2e in niter=%d" % \
-				(use_approx,toc, np.linalg.norm(res-v),niter))
+			#print("\t use_approx = %s, time to solve %5.2e with relerr %5.2e in niter=%d" % \
+			#	(use_approx,toc, np.linalg.norm(res-v),niter))
 
 	@property
 	def solve_op(self):
