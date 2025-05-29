@@ -15,14 +15,7 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
 
     ndim        = npan_dim.shape[0]
     patch_utils = PatchUtils(a,p,ndim=npan_dim.shape[0])
-    Jx_shape    = patch_utils.zz_ext.shape[0]
-    Ji_shape    = patch_utils.zz_int.shape[0]
-
-    xxext_list  = np.zeros((np.prod(npan_dim),Jx_shape, ndim))
-    xxint_list  = np.zeros((np.prod(npan_dim),Ji_shape, ndim))
-    DtN_list    = np.zeros((np.prod(npan_dim),Jx_shape, Jx_shape))
-
-    sub_list    = [np.array([]) for j in range(np.prod(npan_dim))]
+    box_centers = np.zeros((np.prod(npan_dim),ndim))
 
     if (ndim == 2):
 
@@ -30,18 +23,11 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
             for i in range(npan_dim[0]):
 
                 root_loc    = np.zeros(ndim,)
-
                 root_loc[0] = 2 * a[0] * i + box_geom[0,0]
                 root_loc[1] = 2 * a[1] * j + box_geom[0,1]
 
-                leaf_loc = LeafSubdomain(root_loc+a,pdo,patch_utils)
-
                 box_ind  = i+j*npan_dim[0]
-
-                xxext_list[box_ind] = leaf_loc.xxloc_ext
-                xxint_list[box_ind] = leaf_loc.xxloc_int
-                DtN_list  [box_ind] = leaf_loc.DtN
-                sub_list  [box_ind] = leaf_loc
+                box_centers[box_ind] = root_loc + a
 
     else:
 
@@ -55,16 +41,10 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
                     root_loc[1] = 2 * a[1] * j + box_geom[0,1]
                     root_loc[2] = 2 * a[2] * k + box_geom[0,2]
 
-                    leaf_loc = LeafSubdomain(root_loc + a,pdo,patch_utils)
-
                     box_ind  = i + j * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
+                    box_centers [box_ind] = root_loc + a
 
-                    xxext_list [box_ind] = leaf_loc.xxloc_ext
-                    xxint_list [box_ind] = leaf_loc.xxloc_int
-                    DtN_list   [box_ind] = leaf_loc.DtN
-                    sub_list   [box_ind] = leaf_loc
-
-    return patch_utils,npan_dim,xxext_list,xxint_list,sub_list,DtN_list
+    return npan_dim, LeafSubdomain(box_centers,pdo,patch_utils)
 
 def get_duplicated_interior_points_2d(p,npan_dim):
 
@@ -187,8 +167,9 @@ class HPSMultidomain(AbstractPDESolver):
         self._geom     = geom
         self._p        = p
 
-        self.patch_utils,self.npan_dim,xxext_list,xxint_list,\
-        self.sub_list,DtN_list = get_leaf_DtNs(pdo,self._box_geom, a, self.p)
+        self.npan_dim, self.leaf_subdomains = get_leaf_DtNs(pdo,self._box_geom, a, self.p)
+        xxext_list    = self.leaf_subdomains.xxloc_ext
+        xxint_list    = self.leaf_subdomains.xxloc_int
         
         self._XX     = xxext_list.reshape(xxext_list.shape[0] * \
             xxext_list.shape[1],self.ndim)
@@ -208,6 +189,7 @@ class HPSMultidomain(AbstractPDESolver):
             np.union1d(self._Jcopy1,self._Jcopy2))
         self._Ji = self._Jcopy1
 
+        DtN_list = self.leaf_subdomains.DtN
         A    = block_diag(tuple(DtN_list),format='csr')
         del DtN_list
 
@@ -245,15 +227,12 @@ class HPSMultidomain(AbstractPDESolver):
         if (ff_body is None):
             ff_body = np.zeros((self._XXfull.shape[0],nrhs))
 
+        subdomains = self.leaf_subdomains
+
         # Reduce body load to the interfaces
-            
-        ff_body = ff_body.reshape(np.prod(self.npan_dim),\
-            self.patch_utils.zz_int.shape[0],nrhs)
-        ff_red  = np.zeros((np.prod(self.npan_dim),\
-            self.patch_utils.zz_ext.shape[0],nrhs))
-        
-        for j in range(np.prod(self.npan_dim)):
-            ff_red[j] = self.sub_list[j].reduce_body_load(ff_body[j])
+        ff_body = ff_body.reshape(subdomains.nbatch,\
+            subdomains.nt_cheb,nrhs)
+        ff_red  = subdomains.reduce_body_load(ff_body)
 
         ff_red  = ff_red.reshape((self._XX.shape[0],nrhs))
         ff_dup  = ff_red[self._Jcopy1] + ff_red[self._Jcopy2]
@@ -267,13 +246,9 @@ class HPSMultidomain(AbstractPDESolver):
 
         # Solve the PDE on the subdomains with solution on bnd and original body load
 
-        uu_sol_bnd = uu_sol_bnd.reshape(np.prod(self.npan_dim),\
-            self.patch_utils.zz_ext.shape[0],nrhs)
-        uu_sol_int = np.zeros((np.prod(self.npan_dim),\
-            self.patch_utils.zz_int.shape[0],nrhs))
-
-        for j in range(np.prod(self.npan_dim)):
-            uu_sol_int[j] = self.sub_list[j].solve_dir(uu_sol_bnd[j],ff_body[j])
+        uu_sol_bnd = uu_sol_bnd.reshape(subdomains.nbatch,\
+            subdomains.nx_leg,nrhs)
+        uu_sol_int = subdomains.solve_dir(uu_sol_bnd,ff_body)
         return uu_sol_int.reshape(self._XXfull.shape[0],nrhs)
         
     @property

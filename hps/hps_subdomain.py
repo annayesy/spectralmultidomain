@@ -52,70 +52,93 @@ def get_Aloc(pdo,xxloc,Ds):
 
 class LeafSubdomain:
 
-    def __init__(self,box_center,pdo,patch_utils):
+    def __init__(self,box_centers,pdo,patch_utils):
 
-        assert box_center.shape[-1] == patch_utils.ndim
+        assert box_centers.shape[-1] == patch_utils.ndim
+        if (box_centers.ndim == 1):
+            self.centers   = box_centers[None,:]
+        else:
+            self.centers   = box_centers
 
         self.pdo       = pdo
-        self.xxloc_int = patch_utils.zz_int + box_center
-        self.xxloc_ext = patch_utils.zz_ext + box_center
+        self.xxloc_int = patch_utils.zz_int[None,:,:] + self.centers[:,None,:]
+        self.xxloc_ext = patch_utils.zz_ext[None,:,:] + self.centers[:,None,:]
         self.diff_ops  = patch_utils.Ds
         self.p         = patch_utils.p
         self.utils     = patch_utils
+        self.ndim      = patch_utils.ndim
 
-        # Jx is ordered as Jl, Jr, Jd, Ju
-        self.JJ_int  = patch_utils.JJ_int
-        self.JJ_ext  = patch_utils.JJ_ext
+        self.nx_leg       = self.xxloc_ext.shape[1]
+        self.nt_cheb      = self.xxloc_int.shape[1]
+        self.nbatch       = self.centers.shape[0]
+
+        JJ_cheb  = patch_utils.JJ_int
+        JJext_leg= patch_utils.JJ_ext
+
+        if (self.utils.ndim == 2):
+
+            self.Jx_cheb = np.hstack((JJ_cheb.Jl, JJ_cheb.Jr,\
+                JJ_cheb.Jd, JJ_cheb.Ju))
+        else:
+            self.Jx_cheb = np.hstack((JJ_cheb.Jl, JJ_cheb.Jr,\
+                JJ_cheb.Jd, JJ_cheb.Ju, JJ_cheb.Jb, JJ_cheb.Jf ))
+        self.Ji_cheb     = JJ_cheb.Ji
+        self.Jx_cheb_uni = np.setdiff1d(np.arange(self.nt_cheb),self.Ji_cheb)
+
+        self.Nx_cheb     = self.utils.Nx_stack
 
         self.chebfleg_mat = self.utils.chebfleg_exterior_mat
         self.legfcheb_mat = self.utils.legfcheb_exterior_mat
 
     @property
     def Aloc(self):
-        return get_Aloc(self.pdo,self.xxloc_int,self.diff_ops)
+
+        Aloc = np.zeros((self.nbatch,self.nt_cheb,self.nt_cheb))
+
+        for j in range(self.nbatch):
+            Aloc[j,:,:] = get_Aloc(self.pdo,self.xxloc_int[j],self.diff_ops)
+
+        return Aloc
 
     def solve_dir(self,uu_dir,ff_body=None):
 
-        if (self.utils.ndim == 2):
-
-            Jx_stack = np.hstack((self.JJ_int.Jl, self.JJ_int.Jr,\
-                self.JJ_int.Jd, self.JJ_int.Ju))
-        else:
-            Jx_stack = np.hstack((self.JJ_int.Jl, self.JJ_int.Jr,\
-                self.JJ_int.Jd, self.JJ_int.Ju, self.JJ_int.Jb, self.JJ_int.Jf ))
-        Ji       = self.JJ_int.Ji
-        Jx       = np.setdiff1d(np.arange(self.xxloc_int.shape[0]),Ji)
-
-        assert uu_dir.ndim == 2
-        assert uu_dir.shape[0] == self.xxloc_ext.shape[0]
+        if (uu_dir.ndim == 2):
+            uu_dir = uu_dir[None,:,:]
+        assert uu_dir.shape[0] == self.nbatch
+        assert uu_dir.shape[1] == self.nx_leg
 
         nrhs = uu_dir.shape[-1]
-        res  = np.zeros((self.xxloc_int.shape[0],nrhs))
+        res  = np.zeros((self.nbatch,self.nt_cheb,nrhs))
 
         Aloc = self.Aloc
         if (ff_body is None):
-            ff_body = np.zeros((self.xxloc_int.shape[0],nrhs))
+            ff_body = np.zeros((self.nbatch,self.nt_cheb,nrhs))
 
-        res[Jx_stack] = self.chebfleg_mat @ uu_dir
-        res[Ji]       = np.linalg.solve(Aloc[Ji][:,Ji], \
-            ff_body[Ji] - Aloc[Ji][:,Jx] @ res[Jx])
+        for j in range(self.nbatch):
+
+            res[j,self.Jx_cheb] = self.chebfleg_mat @ uu_dir[j]
+            res[j,self.Ji_cheb] = np.linalg.solve(Aloc[j,self.Ji_cheb][:,self.Ji_cheb], \
+                ff_body[j,self.Ji_cheb] - Aloc[j,self.Ji_cheb][:,self.Jx_cheb_uni] @ res[j,self.Jx_cheb_uni])
 
         return res
 
     def reduce_body_load(self,ff_body):
 
-        Nx_stack = self.utils.Nx_stack
+        if (ff_body.ndim == 2):
+            ff_body = ff_body[None,:,:]
+        assert ff_body.shape[0] == self.nbatch
+        assert ff_body.shape[1] == self.nt_cheb
 
-        loc_sol  = self.solve_dir(np.zeros((self.xxloc_ext.shape[0],1)),-ff_body)
-        return self.legfcheb_mat @ (Nx_stack[:,self.JJ_int.Ji] @ loc_sol[self.JJ_int.Ji])
+        loc_sol  = self.solve_dir(np.zeros((self.nbatch,self.nx_leg,1)),-ff_body)
+        red_f    = self.legfcheb_mat @ (self.Nx_cheb[:,self.Ji_cheb] @ loc_sol[:,self.Ji_cheb])
+        return red_f
 
     @property
     def DtN(self):
 
-        Nx_stack = self.utils.Nx_stack
-        mat      = np.eye(self.xxloc_ext.shape[0])
+        mat      = mat = np.eye(self.nx_leg)[None, :, :].repeat(self.nbatch, axis=0)
+        loc_sol  = self.solve_dir(mat)
+        neu_sol  = self.Nx_cheb @ loc_sol
 
-        loc_sol  = self.solve_dir(np.eye(self.xxloc_ext.shape[0]))
-        neu_sol  = Nx_stack @ loc_sol
-
-        return self.legfcheb_mat @ neu_sol
+        DtNs     = self.legfcheb_mat @ neu_sol
+        return DtNs
