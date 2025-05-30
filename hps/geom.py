@@ -1,6 +1,6 @@
-from   abc   import ABCMeta, abstractmethod, abstractproperty
-import numpy as np
-from   hps.pdo import PDO2d,PDO3d
+from   abc       import ABCMeta, abstractmethod, abstractproperty
+import jax.numpy as jnp
+from   hps.pdo   import PDO2d,PDO3d
 
 
 ############################################################################################
@@ -46,9 +46,7 @@ class ParametrizedGeometry2D(AbstractGeometry):
     def parameter_map(self):
         def param_map(xx):
             (z1,z2) = self.zz
-            ZZ = xx.copy()
-            ZZ[...,0] = z1(xx)
-            ZZ[...,1] = z2(xx)
+            ZZ = jnp.stack([z1(xx),z2(xx)],axis=-1)
             return ZZ
         return param_map
 
@@ -56,9 +54,7 @@ class ParametrizedGeometry2D(AbstractGeometry):
     def inv_parameter_map(self):
         def inv_param_map(xx):
             (y1,y2) = self.yy
-            YY = xx.copy()
-            YY[...,0] = y1(xx)
-            YY[...,1] = y2(xx)
+            YY = jnp.stack([y1(xx),y2(xx)],axis=-1)
             return YY
         return inv_param_map
 
@@ -101,7 +97,7 @@ class ParametrizedGeometry2D(AbstractGeometry):
                 result = 0
                 for a, b in pairs:
                     if a is not None and b is not None:
-                        result += np.multiply(a(yy), b(yy))
+                        result += jnp.multiply(a(yy), b(yy))
                 return result
             
         def c(xx):
@@ -140,10 +136,7 @@ class ParametrizedGeometry3D(AbstractGeometry):
     def parameter_map(self):
         def param_map(xx):
             (z1,z2,z3) = self.zz
-            ZZ = xx.copy()
-            ZZ[...,0] = z1(xx)
-            ZZ[...,1] = z2(xx)
-            ZZ[...,2] = z3(xx)
+            ZZ = jnp.stack([z1(xx),z2(xx),z3(xx)],axis=-1)
             return ZZ
         return param_map
 
@@ -151,10 +144,7 @@ class ParametrizedGeometry3D(AbstractGeometry):
     def inv_parameter_map(self):
         def inv_param_map(xx):
             (y1,y2,y3) = self.yy
-            YY = xx.copy()
-            YY[...,0] = y1(xx)
-            YY[...,1] = y2(xx)
-            YY[...,2] = y3(xx)
+            YY = jnp.stack([y1(xx),y2(xx),y3(xx)],axis=-1)
             return YY
         return inv_param_map
 
@@ -193,7 +183,7 @@ class ParametrizedGeometry3D(AbstractGeometry):
                     result = 0
                     for f, g in pairs:
                         if f is not None and g is not None:
-                            result += np.multiply(f(yy), g(yy))
+                            result += jnp.multiply(f(yy), g(yy))
                     return result
                 return func
 
