@@ -128,8 +128,11 @@ class LeafSubdomain:
         Aib     = Aloc_bnd[:,self.Ji_cheb][:,:,self.Jx_cheb_uni]
         Aii     = Aloc_bnd[:,self.Ji_cheb][:,:,self.Ji_cheb]
 
-        res[:,self.Jx_cheb] = self.chebfleg_mat @ uu_tmp
-        res[:,self.Ji_cheb] = np.linalg.solve(Aii, ff_tmp - Aib @ res[:,self.Jx_cheb_uni])
+        dir_cheb    = self.chebfleg_mat @ uu_tmp
+        _,unique_inds  = np.unique(self.Jx_cheb,return_index=True)
+
+        res[:,self.Jx_cheb_uni] = dir_cheb[...,unique_inds,:]
+        res[:,self.Ji_cheb]     = np.linalg.solve(Aii, ff_tmp - Aib @ res[:,self.Jx_cheb_uni])
 
         return res
 
