@@ -108,31 +108,45 @@ class LeafSubdomain:
     def Aloc(self):
         return self.Aloc_helper(0,self.nbatch)
 
+    def solve_dir_helper(self, start, end, uu_dir=None,ff_body=None):
+
+        nrhs = uu_dir.shape[-1] if uu_dir is not None else self.nx_leg
+        res  = np.zeros((end-start,self.nt_cheb,nrhs))
+
+        if (ff_body is None):
+            ff_tmp  = np.zeros((self.Ji_cheb.shape[0],nrhs))
+        else:
+            ff_tmp  = ff_body[start:end,self.Ji_cheb]
+
+        if (uu_dir is None):
+            uu_tmp  = np.eye(self.nx_leg)
+        else:
+            uu_tmp  = uu_dir[start:end]
+
+        Aloc_bnd = self.Aloc_helper(start,end)
+
+        Aib     = Aloc_bnd[:,self.Ji_cheb][:,:,self.Jx_cheb_uni]
+        Aii     = Aloc_bnd[:,self.Ji_cheb][:,:,self.Ji_cheb]
+
+        res[:,self.Jx_cheb] = self.chebfleg_mat @ uu_tmp
+        res[:,self.Ji_cheb] = np.linalg.solve(Aii, ff_tmp - Aib @ res[:,self.Jx_cheb_uni])
+
+        return res
+
     def solve_dir(self,uu_dir,ff_body=None):
 
         if (uu_dir.ndim == 2):
-            uu_dir = uu_dir[None,:,:]
+           uu_dir = uu_dir[None,:,:]
         assert uu_dir.shape[0] == self.nbatch
         assert uu_dir.shape[1] == self.nx_leg
 
         nrhs = uu_dir.shape[-1]
         res  = np.zeros((self.nbatch,self.nt_cheb,nrhs))
 
-        if (ff_body is None):
-            ff_body = np.zeros((self.nbatch,self.nt_cheb,nrhs))
-
         for start in range(0,self.nbatch,10):
             end = min(start+10,self.nbatch)
 
-            ff_tmp  = ff_body[start:end][:,self.Ji_cheb]
-
-            Aloc_bnd= self.Aloc_helper(start,end)
-
-            Aib     = Aloc_bnd[:,self.Ji_cheb][:,:,self.Jx_cheb_uni]
-            Aii     = Aloc_bnd[:,self.Ji_cheb][:,:,self.Ji_cheb]
-
-            res[start:end,self.Jx_cheb] = self.chebfleg_mat @ uu_dir[start:end]
-            res[start:end,self.Ji_cheb] = np.linalg.solve(Aii, ff_tmp - Aib @ res[start:end,self.Jx_cheb_uni])
+            res[start:end] = self.solve_dir_helper(start,end,uu_dir,ff_body)
 
         return res
 
@@ -150,7 +164,11 @@ class LeafSubdomain:
     @property
     def DtN(self):
 
-        mat      = np.eye(self.nx_leg)[None, :, :].repeat(self.nbatch, axis=0)
-        loc_sol  = self.solve_dir(mat)
-        DtNs     = self.legfcheb_mat @ (self.Nx_cheb @ loc_sol)
+        DtNs     = np.zeros((self.nbatch,self.nx_leg,self.nx_leg))
+
+        for start in range(0,self.nbatch,10):
+            end = min(start+10,self.nbatch)
+
+            loc_sol         = self.solve_dir_helper(start,end)
+            DtNs[start:end] = self.legfcheb_mat @ (self.Nx_cheb @ loc_sol)
         return DtNs

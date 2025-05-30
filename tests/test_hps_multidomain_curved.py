@@ -18,16 +18,16 @@ def test_hps_multidomain_curved_2d():
     dpsi = lambda x: -mag * 4 * np.cos(4 * x)
     ddpsi = lambda x: mag * 16 * np.sin(4 * x)
 
-    z1 = lambda xx: xx[:, 0]
-    z2 = lambda xx: xx[:, 1] / psi(xx[:, 0])
+    z1 = lambda xx: xx[..., 0]
+    z2 = lambda xx: xx[..., 1] / psi(xx[..., 0])
 
-    y1 = lambda xx: xx[:, 0]
-    y2 = lambda xx: xx[:, 1] * psi(xx[:, 0])
+    y1 = lambda xx: xx[..., 0]
+    y2 = lambda xx: xx[..., 1] * psi(xx[..., 0])
 
-    y1_d1 = lambda xx: np.ones_like(xx[:, 0])
-    y2_d1 = lambda xx: xx[:, 1] * dpsi(xx[:, 0])
-    y2_d2 = lambda xx: psi(xx[:, 0])
-    y2_d1d1 = lambda xx: xx[:, 1] * ddpsi(xx[:, 0])
+    y1_d1 = lambda xx: np.ones_like(xx[..., 0])
+    y2_d1 = lambda xx: xx[..., 1] * dpsi(xx[..., 0])
+    y2_d2 = lambda xx: psi(xx[..., 0])
+    y2_d1d1 = lambda xx: xx[..., 1] * ddpsi(xx[..., 0])
 
     # Box and parametrized geometry
     box_geom = np.array([[0, 0], [1.0, 1.0]])
@@ -42,7 +42,7 @@ def test_hps_multidomain_curved_2d():
 
     # Constant-coefficient Helmholtz operator
     def bfield_constant(xx, kh):
-        return -(kh ** 2) * np.ones(xx.shape[0])
+        return -(kh ** 2) * np.ones(xx[...,0].shape)
 
     pdo_mod = param_geom.transform_helmholtz_pdo(bfield_constant, kh)
 
@@ -65,19 +65,19 @@ def test_hps_multidomain_curved_3d():
     dpsi = lambda z: -mag * 6 * np.cos(6 * z)
     ddpsi = lambda z: mag * 36 * np.sin(6 * z)
 
-    z1 = lambda xx: xx[:, 0]
-    z2 = lambda xx: xx[:, 1] / psi(xx[:, 0])
-    z3 = lambda xx: xx[:, 2]
+    z1 = lambda xx: xx[..., 0]
+    z2 = lambda xx: xx[..., 1] / psi(xx[..., 0])
+    z3 = lambda xx: xx[..., 2]
 
-    y1 = lambda xx: xx[:, 0]
-    y2 = lambda xx: xx[:, 1] * psi(xx[:, 0])
-    y3 = lambda xx: xx[:, 2]
+    y1 = lambda xx: xx[..., 0]
+    y2 = lambda xx: xx[..., 1] * psi(xx[..., 0])
+    y3 = lambda xx: xx[..., 2]
 
-    y1_d1 = lambda xx: np.ones_like(xx[:, 0])
-    y2_d1 = lambda xx: xx[:, 1] * dpsi(xx[:, 0])
-    y2_d2 = lambda xx: psi(xx[:, 0])
-    y3_d3 = lambda xx: np.ones_like(xx[:, 2])
-    y2_d1d1 = lambda xx: xx[:, 1] * ddpsi(xx[:, 0])
+    y1_d1 = lambda xx: np.ones_like(xx[..., 0])
+    y2_d1 = lambda xx: xx[..., 1] * dpsi(xx[..., 0])
+    y2_d2 = lambda xx: psi(xx[..., 0])
+    y3_d3 = lambda xx: np.ones_like(xx[..., 2])
+    y2_d1d1 = lambda xx: xx[..., 1] * ddpsi(xx[..., 0])
 
     # Parametrized geometry
     box_geom = np.array([[0, 0, 0], [1.0, 1.0, 1.0]])
@@ -90,7 +90,7 @@ def test_hps_multidomain_curved_3d():
 
     # Helmholtz PDE operator on mapped geometry
     def bfield_constant(xx, kh):
-        return -(kh ** 2) * np.ones(xx.shape[0])
+        return -(kh ** 2) * np.ones(xx[...,0].shape)
 
     pdo_mod = param_geom.transform_helmholtz_pdo(bfield_constant, kh)
 

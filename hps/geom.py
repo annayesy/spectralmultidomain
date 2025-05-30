@@ -47,8 +47,8 @@ class ParametrizedGeometry2D(AbstractGeometry):
         def param_map(xx):
             (z1,z2) = self.zz
             ZZ = xx.copy()
-            ZZ[:,0] = z1(xx)
-            ZZ[:,1] = z2(xx)
+            ZZ[...,0] = z1(xx)
+            ZZ[...,1] = z2(xx)
             return ZZ
         return param_map
 
@@ -57,8 +57,8 @@ class ParametrizedGeometry2D(AbstractGeometry):
         def inv_param_map(xx):
             (y1,y2) = self.yy
             YY = xx.copy()
-            YY[:,0] = y1(xx)
-            YY[:,1] = y2(xx)
+            YY[...,0] = y1(xx)
+            YY[...,1] = y2(xx)
             return YY
         return inv_param_map
 
@@ -141,9 +141,9 @@ class ParametrizedGeometry3D(AbstractGeometry):
         def param_map(xx):
             (z1,z2,z3) = self.zz
             ZZ = xx.copy()
-            ZZ[:,0] = z1(xx)
-            ZZ[:,1] = z2(xx)
-            ZZ[:,2] = z3(xx)
+            ZZ[...,0] = z1(xx)
+            ZZ[...,1] = z2(xx)
+            ZZ[...,2] = z3(xx)
             return ZZ
         return param_map
 
@@ -152,9 +152,9 @@ class ParametrizedGeometry3D(AbstractGeometry):
         def inv_param_map(xx):
             (y1,y2,y3) = self.yy
             YY = xx.copy()
-            YY[:,0] = y1(xx)
-            YY[:,1] = y2(xx)
-            YY[:,2] = y3(xx)
+            YY[...,0] = y1(xx)
+            YY[...,1] = y2(xx)
+            YY[...,2] = y3(xx)
             return YY
         return inv_param_map
 
