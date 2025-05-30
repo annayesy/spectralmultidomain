@@ -1,17 +1,26 @@
 import numpy as np
 
-def diag_mult(diag,M):
+def diag_mult(diag, M):
     """
     Performs multiplication of a diagonal matrix (represented by a vector) with a matrix.
-    
+    Supports both single and batched inputs.
+
     Parameters:
-    - diag: A vector representing the diagonal of a diagonal matrix
-    - M: A matrix to be multiplied
-    
+    - diag: shape (m,) or (batch, m)
+    - M: shape (m, n) or (batch, m, n)
+
     Returns:
-    - The result of the diagonal matrix multiplied by M
+    - If inputs are single, returns (m, n) array, else (batch, m, n) array
     """
-    return (diag * M.T).T
+    # single matrix case
+    if diag.ndim == 1:
+        return (diag * M.T).T
+    # batched case: diag (batch, m), M (batch, m, n)
+    elif diag.ndim == 2:
+        # broadcast diag along last axis
+        return diag[:, :, None] * M
+    else:
+        raise ValueError(f"Unsupported diag.ndim={diag.ndim}")
 
 def get_Aloc(pdo,xxloc,Ds):
     """
@@ -19,11 +28,11 @@ def get_Aloc(pdo,xxloc,Ds):
     using differential operators Ds.
     """
 
-    m = xxloc.shape[0];
+    m = xxloc.shape[-2];
     assert Ds.D11.shape[0] == m; assert Ds.D11.shape[1] == m 
-    ndim = xxloc.shape[1]; assert ndim == 2 or ndim == 3
+    ndim = xxloc.shape[-1]; assert ndim == 2 or ndim == 3
 
-    Aloc = np.zeros((m,m))
+    Aloc = np.zeros((m,m)) if xxloc.ndim == 2 else np.zeros((xxloc.shape[0],m,m))
     Aloc -= diag_mult( pdo.c11(xxloc), Ds.D11)
     Aloc -= diag_mult( pdo.c22(xxloc), Ds.D22)
 
@@ -90,15 +99,14 @@ class LeafSubdomain:
         self.chebfleg_mat = self.utils.chebfleg_exterior_mat
         self.legfcheb_mat = self.utils.legfcheb_exterior_mat
 
+    def Aloc_helper(self,start,end):
+
+        Aloc = np.zeros((end-start,self.nt_cheb,self.nt_cheb))
+        return get_Aloc(self.pdo,self.xxloc_int[start:end],self.diff_ops)
+
     @property
     def Aloc(self):
-
-        Aloc = np.zeros((self.nbatch,self.nt_cheb,self.nt_cheb))
-
-        for j in range(self.nbatch):
-            Aloc[j,:,:] = get_Aloc(self.pdo,self.xxloc_int[j],self.diff_ops)
-
-        return Aloc
+        return self.Aloc_helper(0,self.nbatch)
 
     def solve_dir(self,uu_dir,ff_body=None):
 
@@ -110,15 +118,21 @@ class LeafSubdomain:
         nrhs = uu_dir.shape[-1]
         res  = np.zeros((self.nbatch,self.nt_cheb,nrhs))
 
-        Aloc = self.Aloc
         if (ff_body is None):
             ff_body = np.zeros((self.nbatch,self.nt_cheb,nrhs))
 
-        for j in range(self.nbatch):
+        for start in range(0,self.nbatch,10):
+            end = min(start+10,self.nbatch)
 
-            res[j,self.Jx_cheb] = self.chebfleg_mat @ uu_dir[j]
-            res[j,self.Ji_cheb] = np.linalg.solve(Aloc[j,self.Ji_cheb][:,self.Ji_cheb], \
-                ff_body[j,self.Ji_cheb] - Aloc[j,self.Ji_cheb][:,self.Jx_cheb_uni] @ res[j,self.Jx_cheb_uni])
+            ff_tmp  = ff_body[start:end][:,self.Ji_cheb]
+
+            Aloc_bnd= self.Aloc_helper(start,end)
+
+            Aib     = Aloc_bnd[:,self.Ji_cheb][:,:,self.Jx_cheb_uni]
+            Aii     = Aloc_bnd[:,self.Ji_cheb][:,:,self.Ji_cheb]
+
+            res[start:end,self.Jx_cheb] = self.chebfleg_mat @ uu_dir[start:end]
+            res[start:end,self.Ji_cheb] = np.linalg.solve(Aii, ff_tmp - Aib @ res[start:end,self.Jx_cheb_uni])
 
         return res
 
@@ -136,9 +150,7 @@ class LeafSubdomain:
     @property
     def DtN(self):
 
-        mat      = mat = np.eye(self.nx_leg)[None, :, :].repeat(self.nbatch, axis=0)
+        mat      = np.eye(self.nx_leg)[None, :, :].repeat(self.nbatch, axis=0)
         loc_sol  = self.solve_dir(mat)
-        neu_sol  = self.Nx_cheb @ loc_sol
-
-        DtNs     = self.legfcheb_mat @ neu_sol
+        DtNs     = self.legfcheb_mat @ (self.Nx_cheb @ loc_sol)
         return DtNs

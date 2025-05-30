@@ -12,8 +12,8 @@ def const(c=1):
     A function that takes `xxloc`, an n x d matrix of locations, and returns a tensor of constants c.
     """
     def const_func(xxloc):
-        assert xxloc.shape[1] == 2 or xxloc.shape[1] == 3
-        return c * np.ones(xxloc.shape[0],)
+        assert xxloc.shape[-1] == 2 or xxloc.shape[-1] == 3
+        return c * np.ones(xxloc.shape[-2],)
     return const_func
 
 class PDO2d:
