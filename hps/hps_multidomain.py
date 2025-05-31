@@ -1,7 +1,6 @@
 import numpy as np
 
-from hps.hps_subdomain_jax import LeafSubdomainJAX
-#from hps.hps_subdomain_torch import LeafSubdomainTorch as LeafSubdomainJAX
+from hps.hps_subdomain import LeafSubdomain
 
 from hps.hps_patch_utils import PatchUtils
 from scipy.sparse        import block_diag
@@ -46,7 +45,7 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
                     box_ind  = i + j * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
                     box_centers [box_ind] = root_loc + a
 
-    return npan_dim, LeafSubdomainJAX(box_centers,pdo,patch_utils)
+    return npan_dim, LeafSubdomain(box_centers,pdo,patch_utils)
 
 def get_duplicated_interior_points_2d(p,npan_dim):
 
@@ -192,7 +191,7 @@ class HPSMultidomain(AbstractPDESolver):
             np.union1d(self._Jcopy1,self._Jcopy2))
         self._Ji = self._Jcopy1
 
-        DtN_list = self.leaf_subdomains.DtN
+        DtN_list = self.leaf_subdomains.DtN()
         A    = block_diag(tuple(DtN_list),format='csr')
 
         del DtN_list

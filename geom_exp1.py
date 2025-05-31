@@ -8,7 +8,7 @@ from hps.fd_discretization import FDDiscretization
 from time import time
 from matplotlib import pyplot as plt
 
-p = 8; kh = 2; ndim = 3
+p = 8; kh = 2; ndim = 2
 
 if (ndim == 2):
 	pdo         = PDO2d(c11=const(1.0),c22=const(1.0),c=const(-kh**2))
@@ -21,7 +21,7 @@ else:
 
 if (p > 2):
 
-	a         = np.array([1/16,1/8]) if ndim == 2 else np.array([1/16,1/16,1/8])
+	a         = np.array([1/1024,1/512]) if ndim == 2 else np.array([1/32,1/16,1/32])
 
 	tic       = time()
 	solver    = HPSMultidomain(pdo,geom,a,p)
@@ -50,7 +50,7 @@ print("\t Points on each dim   ",solver.npoints_dim)
 if (kh > 0):
 	print("\t Nwaves on each dim   ",solver.get_nwaves_dim(kh))
 
-print ("\t Time to ( get A , setup solver) = (%5.2f,%5.2f) s" % \
+print ("\t Time to ( get DtNs , get sparse solver ) = (%5.2f,%5.2f) s" % \
 	(toc_dtn,toc_setup))
 print("\t Relative error %2.5e" % relerr)
 

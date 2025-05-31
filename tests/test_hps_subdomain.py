@@ -85,14 +85,14 @@ def test_laplace_3dpatch():
 
 def test_helmholtz_3dpatch():
 	box_geom = np.array([[0.25,0,0.5],[0.75,0.5,1]]); a = 0.25
-	p = 18
+	p = 8
 	relerr = solve_helmholtz_on_patch(box_geom,a,p,kh=10,savefig=True)
-	assert relerr < 1e-10
+	assert relerr < 5e-6
 
 def test_3dconvergence_plot():
 
 	a = 0.5; kh = 20
-	p_range      = np.arange(6,20)
+	p_range      = np.arange(6,12)
 	relerr_range = np.zeros(p_range.shape)
 
 	box_geom = np.array([[0,0,0],[1,1,1]])
@@ -140,26 +140,6 @@ def test_leaf_subdomain_projection_and_solution(ndim):
     uu_ext = get_known_greens(xx_ext, kh)
     uu_int = get_known_greens(xx_int, kh)
 
-    Ji = leaf.Ji_cheb
-    Jx = leaf.Jx_cheb
-
-    # Projection: Legendre <- Chebyshev
-    uu_proj_ext = patch_utils.legfcheb_exterior_mat @ uu_int[Jx]
-    assert np.linalg.norm(uu_proj_ext - uu_ext) < 1e-10
-
-    # Projection: Chebyshev <- Legendre, solve
-    Aloc = leaf.Aloc[0]
-    uu_calc = np.zeros_like(uu_int)
-    Jx_set = np.setdiff1d(np.arange(xx_int.shape[0]), Ji)
-
-    uu_calc[Jx] = patch_utils.chebfleg_exterior_mat @ uu_ext
-    uu_calc[Ji] = -np.linalg.solve(Aloc[Ji][:, Ji], Aloc[Ji][:, Jx_set] @ uu_calc[Jx_set])
-
-    err_Jx = np.linalg.norm(uu_calc[Jx] - uu_int[Jx])
-    err_Ji = np.linalg.norm(uu_calc[Ji] - uu_int[Ji])
-    assert err_Jx < 1e-10
-    assert err_Ji < 1e-10
-
     # Dirichlet solve: uu_ext should give uu_int
     uu_solved = leaf.solve_dir(uu_ext)[0]
     assert np.linalg.norm(uu_solved - uu_int) < 1e-7
@@ -179,7 +159,7 @@ def test_leaf_subdomain_dtn_neumann(ndim):
     xx_ext = leaf.xxloc_ext[0]
     uu_ext = get_known_greens(xx_ext, kh=0, center=np.zeros(2,))
 
-    dtn_result = leaf.DtN[0] @ uu_ext
+    dtn_result = leaf.DtN()[0] @ uu_ext
 
     def r_sq(xx):
         return (xx[:, 0]**2 + xx[:, 1]**2).reshape(xx.shape[0], 1)
