@@ -3,43 +3,44 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import functools
+from jax import lax
 
-@jax.jit
 def diag_mult(diag, M):
-    """
-    JAX version of diag_mult.
-    diag: shape (m,) or (batch, m)
-    M:    shape (m, n) or (batch, m, n)
-    """
-    if diag.ndim == 1:
-        # (m,) * (m,n) -> (m,n)
-        return (diag[:, None] * M)
-    elif diag.ndim == 2:
-        # (batch, m, 1) * (batch, m, n)
-        return diag[..., :, None] * M
-    else:
-        raise ValueError(f"Unsupported diag.ndim={diag.ndim}")
-
+    return diag[..., None] * M
 
 class LeafSubdomainJAX:
     def __init__(self, box_centers, pdo, patch_utils):
-        # centers: (batch, ndim)
-        centers = box_centers if box_centers.ndim > 1 else box_centers[None, :]
-
-        device          = jax.devices('gpu')[0] if len(jax.devices('gpu')) > 0 else jax.devices('cpu')[0]
-        Ds              = jax.tree.map(lambda x: jnp.array(x, dtype=jnp.float64,device=device),patch_utils.Ds)
-
-        self.utils      = patch_utils
-        self.ndim       = patch_utils.ndim
-
-        # interior/exterior local points: (batch, nt, ndim)
-        self.xxloc_int  = jnp.array(patch_utils.zz_int[None, :, :] + centers[:, None, :],dtype=jnp.float64,device=device)
-        self.xxloc_ext  = jnp.array(patch_utils.zz_ext[None, :, :] + centers[:, None, :],dtype=jnp.float64,device=device)
 
         self.p          = patch_utils.p
-        self.nx_leg     = self.xxloc_ext.shape[1]
-        self.nt_cheb    = self.xxloc_int.shape[1]
-        self.nbatch     = centers.shape[0]
+        self.ndim       = box_centers.shape[-1]
+        self.utils      = patch_utils
+
+        self.nbatch     = box_centers.shape[0]
+
+        try:
+            device  = jax.devices('gpu')[0]
+            max_mem = device.memory_stats()['bytes_limit']
+        except (IndexError,RuntimeError):
+            device = jax.devices('cpu')[0]
+            max_mem = 5e9
+
+        const_overhead  = 10; const_nbytes = 8
+        self.chunk_size = min(self.nbatch, max_mem // ((self.p**self.ndim)**2  * const_overhead * const_nbytes))
+        self.nbatch_ext = ((self.nbatch+self.chunk_size-1)//self.chunk_size) * self.chunk_size
+        print("Using device:",device,"for HPS leaf computations (", self.nbatch, "leaves with parallel chunk size",self.chunk_size,")")
+
+        # centers: (batch, ndim)
+        centers         = box_centers if box_centers.ndim > 1 else box_centers[None, :]
+        Ds              = jax.tree.map(lambda x: jnp.array(x, dtype=jnp.float64,device=device),patch_utils.Ds)
+
+        centers         = jnp.vstack(( centers, jnp.zeros((self.nbatch_ext-self.nbatch,centers.shape[-1])) ))
+
+        # interior/exterior local points: (batch, nt, ndim)
+        self._xxloc_int  = jnp.array(patch_utils.zz_int[None, :, :] + centers[:, None, :],dtype=jnp.float64,device=device)
+        self._xxloc_ext  = jnp.array(patch_utils.zz_ext[None, :, :] + centers[:, None, :],dtype=jnp.float64,device=device)
+
+        self.nx_leg     = self._xxloc_ext.shape[1]
+        self.nt_cheb    = self._xxloc_int.shape[1]
 
         JJc   = patch_utils.JJ_int
         if self.ndim == 2:
@@ -59,6 +60,26 @@ class LeafSubdomainJAX:
         self.chebfleg_mat  = jnp.array(patch_utils.chebfleg_exterior_mat,dtype=jnp.float64,device=device)
         self.legfcheb_mat  = jnp.array(patch_utils.legfcheb_exterior_mat,dtype=jnp.float64,device=device)
 
+        terms_pdo = [(pdo.c11, Ds.D11, -1), (pdo.c22, Ds.D22, -1)]
+        if pdo.c12 is not None:
+            terms_pdo.append((pdo.c12, Ds.D12, -2))
+        if pdo.c1  is not None:
+            terms_pdo.append((pdo.c1,  Ds.D1,  +1))
+        if pdo.c2  is not None:
+            terms_pdo.append((pdo.c2,  Ds.D2,  +1))
+        if pdo.c   is not None:
+            # Note: jnp.eye(...) is a large constant array; see Section 5 below
+            terms_pdo.append((pdo.c, jnp.eye(self.nt_cheb, dtype=jnp.float64, device=device), +1))
+
+        if self.ndim == 3:
+            terms_pdo.append((pdo.c33, Ds.D33, -1))
+            if pdo.c13 is not None:
+                terms_pdo.append((pdo.c13, Ds.D13, -2))
+            if pdo.c23 is not None:
+                terms_pdo.append((pdo.c23, Ds.D23, -2))
+            if pdo.c3 is not None:
+                terms_pdo.append((pdo.c3, Ds.D3, +1))
+
         @jax.jit
         def _get_Aloc(xxloc):
             """
@@ -72,27 +93,8 @@ class LeafSubdomainJAX:
             out_shape = (m, m) if xxloc.ndim == 2 else (xxloc.shape[0], m, m)
             Aloc = jnp.zeros(out_shape)
 
-            # helper to accumulate terms
-            def accum(A, coeff_fn, D_op, factor=1.0):
-                c = coeff_fn(xxloc)  # shape (m,) or (batch,m)
-                return A - factor * diag_mult(c, D_op)
-
-            # second‐order terms
-            Aloc = accum(Aloc, pdo.c11, Ds.D11)
-            Aloc = accum(Aloc, pdo.c22, Ds.D22)
-            if pdo.c12 is not None:
-                Aloc = accum(Aloc, pdo.c12, Ds.D12, factor=2.0)
-
-            # lower‐order terms
-            if pdo.c1  is not None: Aloc = Aloc + diag_mult(pdo.c1(xxloc), Ds.D1)
-            if pdo.c2  is not None: Aloc = Aloc + diag_mult(pdo.c2(xxloc), Ds.D2)
-            if pdo.c   is not None: Aloc = Aloc + diag_mult(pdo.c(xxloc),  jnp.eye(m))
-
-            if ndim == 3:
-                Aloc = accum(Aloc, pdo.c33, Ds.D33)
-                if pdo.c13 is not None: Aloc = accum(Aloc, pdo.c13, Ds.D13, factor=2.0)
-                if pdo.c23 is not None: Aloc = accum(Aloc, pdo.c23, Ds.D23, factor=2.0)
-                if pdo.c3  is not None: Aloc = Aloc + diag_mult(pdo.c3(xxloc), Ds.D3)
+            for (c_func,Dterm,const) in terms_pdo:
+                Aloc += const * diag_mult(c_func(xxloc),Dterm)
 
             return Aloc
 
@@ -101,7 +103,15 @@ class LeafSubdomainJAX:
     @property
     @functools.partial(jax.jit, static_argnums=0)
     def Aloc(self):
-        return self._get_Aloc(self.xxloc_int)
+        return self._get_Aloc(self._xxloc_int)[:,self.nbatch]
+
+    @property
+    def xxloc_int(self):
+        return self._xxloc_int[:self.nbatch]
+
+    @property
+    def xxloc_ext(self):
+        return self._xxloc_ext[:self.nbatch]        
 
     @functools.partial(jax.jit, static_argnums=0)
     def solve_dir_helper(self, xxloc_bnd, uu_dir=None, ff_body=None):
@@ -135,34 +145,124 @@ class LeafSubdomainJAX:
 
     @functools.partial(jax.jit, static_argnums=0)
     def solve_dir(self, uu_dir, ff_body=None):
+        """
+        solve_dir: solves for each patch in chunk_size‐sized pieces.
+        uu_dir:  (batch, nx_leg, nrhs)  or  (nx_leg, nrhs)
+        ff_body: (batch, nt_cheb, nrhs) or  (nt_cheb, nrhs) or None
+        Returns: (batch, nt_cheb, nrhs)
+        """
         if uu_dir.ndim == 2:
             uu_dir = uu_dir[None, :, :]
         assert uu_dir.shape[0] == self.nbatch
 
-        res = jnp.zeros((self.nbatch, self.nt_cheb, uu_dir.shape[-1]),device=self.xxloc_int.device)
+        device = self._xxloc_int.device
+        nrhs   = uu_dir.shape[-1]
 
-        for start in range(0, self.nbatch, 10):
-            end = min(start + 10, self.nbatch)
-            res = res.at[start:end].set(
-                self.solve_dir_helper(self.xxloc_int[start:end], uu_dir[start:end], ff_body[start:end])
+        if ff_body is None:
+            ff_body = jnp.zeros((self.nbatch, self.nt_cheb, nrhs),
+                                dtype=jnp.float64,
+                                device=device)
+        else:
+            if ff_body.ndim == 2:
+                ff_body = ff_body[None, :, :]
+            assert ff_body.shape[0] == self.nbatch
+
+        uu_dir_ext  = jnp.zeros((self.nbatch_ext, self.nx_leg, nrhs),
+                                dtype=jnp.float64,
+                                device=device)
+        uu_dir_ext  = uu_dir_ext.at[: self.nbatch].set(uu_dir)
+
+        ff_body_ext = jnp.zeros((self.nbatch_ext, self.nt_cheb, nrhs),
+                                dtype=jnp.float64,
+                                device=device)
+        ff_body_ext = ff_body_ext.at[: self.nbatch].set(ff_body)
+        res_ext = jnp.zeros((self.nbatch_ext, self.nt_cheb, nrhs),
+                            dtype=jnp.float64,
+                            device=device)
+
+        nchunks = self.nbatch_ext // self.chunk_size
+
+        def body_fn(i, res_carry):
+
+            start = i * self.chunk_size
+
+            xxloc_chunk  = lax.dynamic_slice(
+                self._xxloc_int,
+                (start, 0, 0),
+                (self.chunk_size, self.nt_cheb, self.ndim)
             )
-        return res
+            uu_chunk     = lax.dynamic_slice(
+                uu_dir_ext,
+                (start, 0, 0),
+                (self.chunk_size, self.nx_leg, nrhs)
+            )
+            ff_chunk     = lax.dynamic_slice(
+                ff_body_ext,
+                (start, 0, 0),
+                (self.chunk_size, self.nt_cheb, nrhs)
+            )
+
+            local_result = self.solve_dir_helper(xxloc_chunk, uu_chunk, ff_chunk)
+
+            res_carry = lax.dynamic_update_slice(
+                res_carry,
+                local_result,         # shape (chunk_size, nt_cheb, nrhs)
+                (start, 0, 0)         # starting indices
+            )
+            return res_carry
+
+        res_final = lax.fori_loop(0, nchunks, body_fn, res_ext)
+        return res_final[: self.nbatch]
 
     @functools.partial(jax.jit, static_argnums=0)
     def reduce_body_load(self, ff_body):
         if ff_body.ndim == 2:
             ff_body = ff_body[None, :, :]
+        nrhs  = ff_body.shape[-1]
+        device= self._xxloc_int.device
 
-        loc_sol = self.solve_dir(jnp.zeros((self.nbatch, self.nx_leg, 1),device=self.xxloc_int.device), -ff_body)
+        loc_sol = self.solve_dir(jnp.zeros((self.nbatch, self.nx_leg, 1),device=device), -ff_body)
         tmp     = self.Nx_cheb[:, self.Ji_cheb] @ loc_sol[:, self.Ji_cheb]
         return self.legfcheb_mat @ tmp
 
     @property
     @functools.partial(jax.jit, static_argnums=0)
     def DtN(self):
-        DtNs = jnp.zeros((self.nbatch, self.nx_leg, self.nx_leg),device=self.xxloc_int.device)
-        for start in range(0, self.nbatch, 10):
-            end = min(start + 10, self.nbatch)
-            loc = self.solve_dir_helper(self.xxloc_int[start:end])
-            DtNs = DtNs.at[start:end].set(self.legfcheb_mat @ (self.Nx_cheb @ loc))
-        return DtNs
+        """
+        Compute a (nbatch_ext × nx_leg × nx_leg) DtN in chunks of size=self.chunk_size
+        using lax.fori_loop, then return only the first self.nbatch “real” rows.
+        """
+        DtNs = jnp.zeros(
+            (self.nbatch_ext, self.nx_leg, self.nx_leg),
+            dtype=jnp.float64,
+            device=self._xxloc_int.device
+        )
+
+        nchunks = self.nbatch_ext // self.chunk_size
+
+        def body_fn(i, DtNs_carry):
+            start = i * self.chunk_size
+
+            xx_chunk = lax.dynamic_slice(
+                self._xxloc_int,
+                (start, 0, 0),
+                (self.chunk_size, self.nt_cheb, self.ndim)
+            )
+            # xx_chunk: (chunk_size, nt_cheb, ndim)
+
+            loc = self.solve_dir_helper(xx_chunk)
+
+
+            tmp  = self.Nx_cheb @ loc        
+            frag = self.legfcheb_mat @ tmp  
+
+            DtNs_carry = lax.dynamic_update_slice(
+                DtNs_carry,      # big array: (nbatch_ext, nx_leg, nx_leg)
+                frag,            # small array: (chunk_size, nx_leg, nx_leg)
+                (start, 0, 0)    # starting indices along each axis
+            )
+            return DtNs_carry
+
+        DtNs_full = lax.fori_loop(0, nchunks, body_fn, DtNs)
+
+        return DtNs_full[: self.nbatch]

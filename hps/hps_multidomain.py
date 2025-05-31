@@ -1,6 +1,7 @@
 import numpy as np
 
 from hps.hps_subdomain_jax import LeafSubdomainJAX
+#from hps.hps_subdomain_torch import LeafSubdomainTorch as LeafSubdomainJAX
 
 from hps.hps_patch_utils import PatchUtils
 from scipy.sparse        import block_diag
@@ -171,6 +172,7 @@ class HPSMultidomain(AbstractPDESolver):
         self.npan_dim, self.leaf_subdomains = get_leaf_DtNs(pdo,self._box_geom, a, self.p)
         xxext_list    = self.leaf_subdomains.xxloc_ext
         xxint_list    = self.leaf_subdomains.xxloc_int
+        nbatch        = self.leaf_subdomains.nbatch
         
         self._XX     = xxext_list.reshape(xxext_list.shape[0] * \
             xxext_list.shape[1],self.ndim)

@@ -21,7 +21,7 @@ else:
 
 if (p > 2):
 
-	a         = np.array([1/16,1/8]) if ndim == 2 else np.array([1/16,1/8,1/32])
+	a         = np.array([1/16,1/8]) if ndim == 2 else np.array([1/16,1/16,1/8])
 
 	tic       = time()
 	solver    = HPSMultidomain(pdo,geom,a,p)
