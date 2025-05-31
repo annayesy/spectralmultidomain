@@ -3,9 +3,8 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import functools
-from jax import lax
-import os
 
+import os
 import numpy as np
 
 def query_total_memory():
@@ -70,7 +69,8 @@ class LeafSubdomain:
 		self.legfcheb_mat  = jnp.array(patch_utils.legfcheb_exterior_mat,dtype=jnp.float64,device=device)
 
 		self._eye_block = jnp.eye(self.nx_leg, dtype=jnp.float64,device=device)[None, :, :]
-		self._zero_rhs  = jnp.zeros((1, self.nt_cheb, 1), dtype=jnp.float64,device=device) 
+		self._zero_ff   = jnp.zeros((1, self.nt_cheb, 1), dtype=jnp.float64,device=device) 
+		self._zero_dir  = jnp.zeros((1, self.nx_leg, 1), dtype=jnp.float64,device=device) 
 
 		terms_pdo = [(pdo.c11, Ds.D11, -1), (pdo.c22, Ds.D22, -1)]
 		if pdo.c12 is not None:
@@ -122,6 +122,7 @@ class LeafSubdomain:
 	def xxloc_ext(self):
 		return self._xxloc_ext[:self.nbatch]
 
+	@functools.partial(jax.jit,static_argnums=0)
 	def solve_dir_helper(self, xxloc_bnd, uu_dir, ff_body):
 		B       = xxloc_bnd.shape[0]
 		nrhs    = uu_dir.shape[-1] if uu_dir is not None else self.nx_leg
@@ -146,78 +147,77 @@ class LeafSubdomain:
 		ff_body: (batch, nt_cheb, nrhs) or  (nt_cheb, nrhs) or None
 		Returns: (batch, nt_cheb, nrhs)
 		"""
-		if uu_dir.ndim == 2:
-			uu_dir = uu_dir[None, :, :]
-		assert uu_dir.shape[0] == self.nbatch
-
 		device = self._xxloc_int.device
 		nrhs   = uu_dir.shape[-1]
 
 		if ff_body is None:
-			ff_body = jnp.zeros((self.nbatch, self.nt_cheb, nrhs),
-								dtype=jnp.float64,
-								device=device)
-		assert ff_body.shape[0] == self.nbatch
+			ff_body = np.zeros((self.nbatch, self.nt_cheb, nrhs))
+		else:
+			assert ff_body.shape[0] == self.nbatch
+		assert uu_dir.shape[0] == self.nbatch
 
-		return self._solve_dir(uu_dir,ff_body)
+		uu_ext   = np.zeros((self.nbatch_ext,self.nx_leg,nrhs))
+		uu_ext[:self.nbatch] = uu_dir
 
-	@functools.partial(jax.jit, static_argnums=0)
-	def _solve_dir(self, uu_dir,ff_body):
-		nrhs        = uu_dir.shape[-1]
+		ff_ext   = np.zeros((self.nbatch_ext,self.nt_cheb,nrhs))
+		ff_ext[:self.nbatch] = ff_body
 
-		uu_dir_ext  = jnp.zeros((self.nbatch_ext, self.nx_leg, nrhs),
-								dtype=jnp.float64)
-		uu_dir_ext  = uu_dir_ext.at[: self.nbatch].set(uu_dir)
+		out_host = np.zeros((self.nbatch,self.nt_cheb,nrhs))
+		nchunks  = self.nbatch_ext // self.chunk_size
 
-		ff_body_ext = jnp.zeros((self.nbatch_ext, self.nt_cheb, nrhs),
-								dtype=jnp.float64)
-		ff_body_ext = ff_body_ext.at[: self.nbatch].set(ff_body)
-		res_ext = jnp.zeros((self.nbatch_ext, self.nt_cheb, nrhs),
-							dtype=jnp.float64)
-
-		nchunks = self.nbatch_ext // self.chunk_size
-
-		def body_fn(i, res_carry):
-
+		for i in range(nchunks):
 			start = i * self.chunk_size
+			end   = start + self.chunk_size
 
-			xxloc_chunk  = lax.dynamic_slice(
-				self._xxloc_int,
-				(start, 0, 0),
-				(self.chunk_size, self.nt_cheb, self.ndim)
-			)
-			uu_chunk     = lax.dynamic_slice(
-				uu_dir_ext,
-				(start, 0, 0),
-				(self.chunk_size, self.nx_leg, nrhs)
-			)
-			ff_chunk     = lax.dynamic_slice(
-				ff_body_ext,
-				(start, 0, 0),
-				(self.chunk_size, self.nt_cheb, nrhs)
-			)
+			xx_chunk = self._xxloc_int[start:end]
+			uu_chunk = jnp.array(uu_ext[start:end],device=device)
+			ff_chunk = jnp.array(ff_ext[start:end],device=device)
+			frag_dev = self.solve_dir_helper(xx_chunk,uu_chunk,ff_chunk)
 
-			local_result = self.solve_dir_helper(xxloc_chunk, uu_chunk, ff_chunk)
+			real_start = start
+			real_end   = min(end, self.nbatch)
+			length     = real_end - real_start 
 
-			res_carry = lax.dynamic_update_slice(
-				res_carry,
-				local_result,         # shape (chunk_size, nt_cheb, nrhs)
-				(start, 0, 0)         # starting indices
-			)
-			return res_carry
+			if length > 0:
+				frag_chunk_host = np.array(frag_dev[:length])   # shape (length, nx_leg, nx_leg)
+				out_host[real_start:real_end, :, :] = frag_chunk_host
+		return out_host
 
-		res_final = lax.fori_loop(0, nchunks, body_fn, res_ext)
-		return res_final[: self.nbatch]
+	@functools.partial(jax.jit,static_argnums=0)
+	def _reduce_chunk_body_load(self, xx_chunk, ff_chunk):
+
+		loc_sol = self.solve_dir_helper(xx_chunk, self._zero_dir, -ff_chunk)
+		tmp     = self.Nx_cheb[:, self.Ji_cheb] @ loc_sol[:, self.Ji_cheb]		
+		return self.legfcheb_mat @ tmp
 
 	def reduce_body_load(self, ff_body):
-		if ff_body.ndim == 2:
-			ff_body = ff_body[None, :, :]
+		assert ff_body.shape[0] == self.nbatch
 		nrhs  = ff_body.shape[-1]
 		device= self._xxloc_int.device
 
-		loc_sol = self._solve_dir(jnp.zeros((self.nbatch, self.nx_leg, 1),device=device), -ff_body)
-		tmp     = self.Nx_cheb[:, self.Ji_cheb] @ loc_sol[:, self.Ji_cheb]
-		return self.legfcheb_mat @ tmp
+		ff_ext   = np.zeros((self.nbatch_ext,self.nt_cheb,nrhs))
+		ff_ext[:self.nbatch] = ff_body
+
+		out_host = np.zeros((self.nbatch,self.nx_leg,nrhs))
+		nchunks  = self.nbatch_ext // self.chunk_size
+
+		for i in range(nchunks):
+			start = i * self.chunk_size
+			end   = start + self.chunk_size
+
+			xx_chunk = self._xxloc_int[start:end]
+			ff_chunk = jnp.array(ff_ext[start:end],device=device)
+			frag_dev = self._reduce_chunk_body_load(xx_chunk,ff_chunk)
+
+			real_start = start
+			real_end   = min(end, self.nbatch)
+			length     = real_end - real_start 
+
+			if length > 0:
+				frag_chunk_host = np.array(frag_dev[:length])   # shape (length, nx_leg, nx_leg)
+				out_host[real_start:real_end, :, :] = frag_chunk_host
+		return out_host
+
 
 	@functools.partial(jax.jit, static_argnums=0)
 	def _compute_chunk_DtN(self, xx_chunk):
@@ -228,8 +228,8 @@ class LeafSubdomain:
 			"""
 			loc = self.solve_dir_helper(
 				xx_chunk,
-				uu_dir = self._eye_block,
-				ff_body = self._zero_rhs
+				uu_dir  = self._eye_block,
+				ff_body = self._zero_ff
 			)
 
 			tmp  = self.Nx_cheb @ loc
