@@ -150,11 +150,15 @@ class LeafSubdomain:
 		device = self._xxloc_int.device
 		nrhs   = uu_dir.shape[-1]
 
+		if (self.nbatch == 1 and uu_dir.ndim == 2):
+			uu_dir = uu_dir[None,:,:]
+
 		if ff_body is None:
 			ff_body = np.zeros((self.nbatch, self.nt_cheb, nrhs))
-		else:
-			assert ff_body.shape[0] == self.nbatch
-		assert uu_dir.shape[0] == self.nbatch
+		elif (self.nbatch == 1 and ff_body.ndim == 2):
+			ff_body == ff_body[None,:,:]
+		assert ff_body.shape[0] == self.nbatch
+		assert uu_dir.shape[0]  == self.nbatch
 
 		uu_ext   = np.zeros((self.nbatch_ext,self.nx_leg,nrhs))
 		uu_ext[:self.nbatch] = uu_dir
@@ -191,7 +195,10 @@ class LeafSubdomain:
 		return self.legfcheb_mat @ tmp
 
 	def reduce_body_load(self, ff_body):
+		if (self.nbatch == 1 and ff_body.ndim == 2):
+			ff_body == ff_body[None,:,:]
 		assert ff_body.shape[0] == self.nbatch
+
 		nrhs  = ff_body.shape[-1]
 		device= self._xxloc_int.device
 
