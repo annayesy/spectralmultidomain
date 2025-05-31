@@ -37,7 +37,6 @@ else:
 
 ######################################################################
 
-solver.setup_solver_Aii()
 tic       = time()
 solver.setup_solver_Aii()
 toc_setup = time() - tic

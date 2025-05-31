@@ -4,6 +4,14 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import functools
 from jax import lax
+import os
+
+import numpy as np
+
+def query_total_memory():
+	pages = os.sysconf('SC_PHYS_PAGES')
+	page_size = os.sysconf('SC_PAGE_SIZE')
+	return pages * page_size
 
 def diag_mult(diag, M):
 	return diag[..., None] * M
@@ -25,10 +33,10 @@ class LeafSubdomain:
 			max_mem = device.memory_stats()['bytes_limit']
 		except (IndexError,RuntimeError):
 			device = jax.devices('cpu')[0]
-			max_mem = 5e9
+			max_mem = max( 5e9, int(query_total_memory()/5))
 
 		const_overhead  = 8; const_nbytes = 8
-		self.chunk_size = min(self.nbatch, max_mem // ((self.p**self.ndim)**2  * const_overhead * const_nbytes))
+		self.chunk_size = min(self.nbatch, int(max_mem // ((self.p**self.ndim)**2  * const_overhead * const_nbytes)))
 
 		self.nbatch_ext = ((self.nbatch+self.chunk_size-1)//self.chunk_size) * self.chunk_size
 		print("Using device:",device,"for HPS leaf computations (", self.nbatch, "leaves with parallel chunk size",self.chunk_size,")")
@@ -60,6 +68,9 @@ class LeafSubdomain:
 		self.Nx_cheb       = jnp.array(patch_utils.Nx_stack,dtype=jnp.float64,device=device)
 		self.chebfleg_mat  = jnp.array(patch_utils.chebfleg_exterior_mat,dtype=jnp.float64,device=device)
 		self.legfcheb_mat  = jnp.array(patch_utils.legfcheb_exterior_mat,dtype=jnp.float64,device=device)
+
+		self._eye_block = jnp.eye(self.nx_leg, dtype=jnp.float64,device=device)[None, :, :]
+		self._zero_rhs  = jnp.zeros((1, self.nt_cheb, 1), dtype=jnp.float64,device=device) 
 
 		terms_pdo = [(pdo.c11, Ds.D11, -1), (pdo.c22, Ds.D22, -1)]
 		if pdo.c12 is not None:
@@ -209,39 +220,50 @@ class LeafSubdomain:
 		return self.legfcheb_mat @ tmp
 
 	@functools.partial(jax.jit, static_argnums=0)
+	def _compute_chunk_DtN(self, xx_chunk):
+			"""
+			xx_chunk: a JAX array of shape (chunk_size, nt_cheb, ndim)
+			Returns a DeviceArray frag of shape (chunk_size, nx_leg, nx_leg),
+			which is exactly the DtN‐block corresponding to these chunk_size leaves.
+			"""
+			loc = self.solve_dir_helper(
+				xx_chunk,
+				uu_dir = self._eye_block,
+				ff_body = self._zero_rhs
+			)
+
+			tmp  = self.Nx_cheb @ loc
+			frag = self.legfcheb_mat @ tmp
+
+			return frag
+
 	def DtN(self):
 		"""
-		Compute a (nbatch_ext × nx_leg × nx_leg) DtN in chunks of size=self.chunk_size
-		using lax.fori_loop, then return only the first self.nbatch “real” rows.
+		Compute the DtN “matrix” for each of the `nbatch` leaves, by slicing
+		through self._xxloc_int in chunks of size self.chunk_size.  We never
+		allocate the full (nbatch_ext × nx_leg × nx_leg) array on the device.
+		Instead, we build a host‐side NumPy array of shape (nbatch × nx_leg × nx_leg),
+		fill it chunk by chunk, and return it as a NumPy array.
 		"""
-		DtNs = jnp.zeros(
-			(self.nbatch_ext, self.nx_leg, self.nx_leg),
-			dtype=jnp.float64,
-			device=self._xxloc_int.device
-		)
+		# Pre‐allocate a host‐side numpy buffer for “real” leaves:
+		out_host = np.zeros((self.nbatch, self.nx_leg, self.nx_leg), dtype=np.float64)
 
 		nchunks = self.nbatch_ext // self.chunk_size
 
-		def body_fn(i, DtNs_carry):
+		for i in range(nchunks):
 			start = i * self.chunk_size
+			end   = start + self.chunk_size
 
-			xx_chunk = lax.dynamic_slice(
-				self._xxloc_int,
-				(start, 0, 0),
-				(self.chunk_size, self.nt_cheb, self.ndim)
-			)
+			xx_chunk = self._xxloc_int[start:end]   # JAX array of shape (chunk_size, nt_cheb, ndim)
 
-			loc  = self.solve_dir_helper(xx_chunk, uu_dir = jnp.eye(self.nx_leg)[None, :, :],\
-				ff_body=jnp.zeros((1, self.nt_cheb, 1)))
-			tmp  = self.Nx_cheb @ loc        
-			frag = self.legfcheb_mat @ tmp  
+			frag_dev = self._compute_chunk_DtN(xx_chunk)
 
-			DtNs_carry = lax.dynamic_update_slice(
-				DtNs_carry,      # big array: (nbatch_ext, nx_leg, nx_leg)
-				frag,            # small array: (chunk_size, nx_leg, nx_leg)
-				(start, 0, 0)    # starting indices along each axis
-			)
-			return DtNs_carry
+			real_start = start
+			real_end   = min(end, self.nbatch)
+			length     = real_end - real_start 
 
-		DtNs_full = lax.fori_loop(0, nchunks, body_fn, DtNs)
-		return DtNs_full[: self.nbatch]
+			if length > 0:
+				frag_chunk_host = np.array(frag_dev[:length])   # shape (length, nx_leg, nx_leg)
+				out_host[real_start:real_end, :, :] = frag_chunk_host
+
+		return out_host
