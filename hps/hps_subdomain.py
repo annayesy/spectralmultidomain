@@ -34,8 +34,8 @@ class LeafSubdomain:
 			device = jax.devices('cpu')[0]
 			max_mem = max( 5e9, int(query_total_memory()/5))
 
-		const_overhead  = 8; const_nbytes = 8
-		self.chunk_size = min(self.nbatch, int(max_mem // ((self.p**self.ndim)**2  * const_overhead * const_nbytes)))
+		const_overhead  = 6; const_nbytes = 8
+		self.chunk_size = max( min(self.nbatch, int(max_mem // ((self.p**self.ndim)**2  * const_overhead * const_nbytes))), 1)
 
 		self.nbatch_ext = ((self.nbatch+self.chunk_size-1)//self.chunk_size) * self.chunk_size
 		print("Using device:",device,"for HPS leaf computations (", self.nbatch, "leaves with parallel chunk size",self.chunk_size,")")

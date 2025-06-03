@@ -15,24 +15,3 @@ To verify the installation, run:
 ```
 pytest
 ```
-
-## On the Oden machines
-Ssh and navigate to the appropriate directory.
-```
-ssh username@machine.oden.utexas.edu
-cd /workspace/username
-```
-Install miniconda3 in the `/workspace/username` directory. After the install, check that package data is stored in `/workspace/username`.
-```
-# Add settings
-conda config --file /workspace/username/miniconda3/.condarc \
-  --add pkgs_dirs /workspace/username/miniconda3/pkgs
-
-conda config --file /workspace/username/miniconda3/.condarc \
-  --add envs_dirs /workspace/username/miniconda3/envs
-
-# Verify
-conda config --file /workspace/username/miniconda3/.condarc \
-  --show pkgs_dirs envs_dirs
-```
-Install the package in a conda environment as described above.
