@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 import pytest
 
-from hps.pdo import PDO2d, const
+from hps.pdo import PDO2d, const,get_known_greens
 from hps.geom import ParametrizedGeometry2D
 from hps.geom import ParametrizedGeometry3D
 from hps.hps_multidomain import HPSMultidomain
@@ -52,6 +52,39 @@ def test_hps_multidomain_curved_2d():
 
     # Validate error
     assert relerr < 1e-6, f"Relative error too high in 2D: {relerr:.2e}"
+
+    import numpy as np
+
+    points_bnd       = solver.geom.parameter_map(solver.XX)
+    points_full      = solver.geom.parameter_map(solver._XXfull)
+
+    uu_full     = get_known_greens(points_full,kh,center = solver.geom.bounds[1]+10)
+    uu_bnd      = get_known_greens(points_bnd,kh,center  = solver.geom.bounds[1]+10)
+
+    uu_sol      = solver.solve_dir_full(uu_bnd[solver.Jx]) # solution on all HPS points
+    relerr      = np.linalg.norm(uu_sol - uu_full) / np.linalg.norm(uu_full)
+    assert relerr < 3e-10, f"Relative error too high in 2D: {relerr:.2e}"
+
+    assert kh == 0
+
+    def get_mms(points):
+        # u(x, y) = sin(pi x) * cos(pi y)
+        mms = np.sin(np.pi * points[:,0]) * np.cos(np.pi * points[:,1])
+        return mms[:, np.newaxis]
+
+    def get_body_load(points):
+        # f(x, y) = 2 * pi^2 * sin(pi x) * cos(pi y)
+        ff = 2 * (np.pi**2) * get_mms(points)
+        return ff[:, np.newaxis]
+
+
+    ########### Get the solution on the full domain (with body load)
+    uu_full     = get_mms(points_full)
+    uu_bnd      = get_mms(points_bnd)
+
+    uu_sol      = solver.solve_dir_full(uu_bnd[solver.Jx], get_body_load(points_full)) # solution on all HPS points
+    relerr      = np.linalg.norm(uu_sol - uu_full) / np.linalg.norm(uu_full)
+    assert relerr < 3e-7, f"Relative error too high in 2D: {relerr:.2e}"
 
 
 def test_hps_multidomain_curved_3d():

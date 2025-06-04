@@ -66,6 +66,8 @@ class LeafSubdomain:
 
 		self.nt_cheb  = zz_patch_cheb.shape[0]; self.nx_leg = zz_patch_leg.shape[0]
 		self.ni_cheb  = Ji_cheb.shape[0]
+		self.inv_perm_ni_cheb = np.argsort(Jorder)
+		self.perm_ni_cheb     = Jorder
 
 		# interior/exterior local points: (batch, nt, ndim)
 		box_centers      = jnp.vstack(( box_centers, jnp.zeros((self.nbatch_ext-self.nbatch,box_centers.shape[-1])) ))
@@ -120,7 +122,7 @@ class LeafSubdomain:
 
 	@property
 	def xxloc_int(self):
-		return self._xxloc_int[:self.nbatch]
+		return self._xxloc_int[:self.nbatch,self.inv_perm_ni_cheb]
 
 	@property
 	def xxloc_ext(self):
@@ -181,7 +183,7 @@ class LeafSubdomain:
 		uu_ext[:self.nbatch] = uu_dir
 
 		ff_ext   = np.zeros((self.nbatch_ext,self.nt_cheb,nrhs))
-		ff_ext[:self.nbatch] = ff_body
+		ff_ext[:self.nbatch] = ff_body[:,self.perm_ni_cheb]
 
 		out_host = np.zeros((self.nbatch,self.nt_cheb,nrhs))
 		nchunks  = self.nbatch_ext // self.chunk_size
@@ -200,7 +202,7 @@ class LeafSubdomain:
 			length     = real_end - real_start 
 
 			if length > 0:
-				frag_chunk_host = np.array(frag_dev[:length])   # shape (length, nx_leg, nx_leg)
+				frag_chunk_host = np.array(frag_dev)[:length,self.inv_perm_ni_cheb]   # shape (length, nx_leg, nx_leg)
 				out_host[real_start:real_end, :, :] = frag_chunk_host
 		return out_host
 
@@ -220,7 +222,7 @@ class LeafSubdomain:
 		device= self._xxloc_int.device
 
 		ff_ext   = np.zeros((self.nbatch_ext,self.nt_cheb,nrhs))
-		ff_ext[:self.nbatch] = ff_body
+		ff_ext[:self.nbatch] = ff_body[:,self.perm_ni_cheb]
 
 		out_host = np.zeros((self.nbatch,self.nx_leg,nrhs))
 		nchunks  = self.nbatch_ext // self.chunk_size
