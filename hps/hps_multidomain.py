@@ -6,6 +6,7 @@ from hps.hps_patch_utils import PatchUtils
 from scipy.sparse        import block_diag
 from hps.sparse_utils    import CSRBuilder
 from hps.pde_solver      import AbstractPDESolver
+from time                import time
 
 def get_leaf_DtNs(pdo, box_geom, a, p):
 
@@ -141,7 +142,7 @@ def get_duplicated_interior_points_3d(p,npan_dim):
 # HPS Multidomain class for handling multidomain discretizations
 class HPSMultidomain(AbstractPDESolver):
     
-    def __init__(self, pdo, geom, a, p):
+    def __init__(self, pdo, geom, a, p, verbose=False):
         """
         Initializes the HPS multidomain solver with domain 
         information and discretization parameters.
@@ -191,10 +192,14 @@ class HPSMultidomain(AbstractPDESolver):
             np.union1d(self._Jcopy1,self._Jcopy2))
         self._Ji = self._Jcopy1
 
+        tic      = time()
         DtN_list = self.leaf_subdomains.DtN()
+        toc_dtn  = time() - tic
         A    = block_diag(tuple(DtN_list),format='csr')
 
         del DtN_list
+
+        tic = time()
 
         #### accumulate coo matrix
         Aii = CSRBuilder(self._Jcopy1.shape[0],\
@@ -216,11 +221,13 @@ class HPSMultidomain(AbstractPDESolver):
         Axi.add_data(A[self._Jx][:,self._Jcopy1])
         Axi.add_data(A[self._Jx][:,self._Jcopy2])
         Axi = Axi.tocsr()
+        toc_sparse = time() - tic
 
         self._Aii      = Aii
         self._Aix      = Aix
         self._Axi      = Axi
         self._Axx      = A[self.Jx][:,self.Jx]
+        self.stats     = {'toc_sparse':toc_sparse,'toc_dtn':toc_dtn}
 
     def solve_dir_full(self,uu_dir,ff_body=None):
 

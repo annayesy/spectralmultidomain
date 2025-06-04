@@ -36,21 +36,22 @@ else:
 	toc_dtn   = time() - tic
 
 ######################################################################
+print("Ntot = %d, p=%d, kh = %5.2f" % (np.prod(solver.npoints_dim),solver.p,kh))
+
+if (p>2):
+	print("\t Time to (get DtNs, assemble sparse) = (%5.2f,%5.2f) s" % \
+            (solver.stats['toc_dtn'],solver.stats['toc_sparse']))
 
 tic       = time()
 solver.setup_solver_Aii()
 toc_setup = time() - tic
+print ("\t Time to ( factorize sparse system ) = (%5.2f) s" % \
+	(toc_setup))
 
 relerr    = solver.verify_discretization(kh)
-
-print("Ntot = %d, p=%d, kh = %5.2f" % (np.prod(solver.npoints_dim),solver.p,kh))
 print("\t Points on each dim   ",solver.npoints_dim)
-
 if (kh > 0):
 	print("\t Nwaves on each dim   ",solver.get_nwaves_dim(kh))
-
-print ("\t Time to ( get DtNs , get sparse solver ) = (%5.2f,%5.2f) s" % \
-	(toc_dtn,toc_setup))
 print("\t Relative error %2.5e" % relerr)
 
 ######################################################################

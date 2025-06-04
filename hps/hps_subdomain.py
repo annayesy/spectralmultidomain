@@ -34,39 +34,43 @@ class LeafSubdomain:
 			device = jax.devices('cpu')[0]
 			max_mem = max( 5e9, int(query_total_memory()/5))
 
-		const_overhead  = 6; const_nbytes = 8
-		self.chunk_size = max( min(self.nbatch, int(max_mem // ((self.p**self.ndim)**2  * const_overhead * const_nbytes))), 1)
-
+		const_overhead  = 4; const_nbytes = 8
+		chunk_calc      = int(max_mem // ((self.p**self.ndim)**2  * const_overhead * const_nbytes))
+		self.chunk_size = max( min(self.nbatch, chunk_calc), 1)
 		self.nbatch_ext = ((self.nbatch+self.chunk_size-1)//self.chunk_size) * self.chunk_size
 		print("Using device:",device,"for HPS leaf computations (", self.nbatch, "leaves with parallel chunk size",self.chunk_size,")")
 
-		Ds              = jax.tree.map(lambda x: jnp.array(x, dtype=jnp.float64,device=device),patch_utils.Ds)
-		box_centers     = jnp.vstack(( box_centers, jnp.zeros((self.nbatch_ext-self.nbatch,box_centers.shape[-1])) ))
-
-		# interior/exterior local points: (batch, nt, ndim)
-		self._xxloc_int  = jnp.array(patch_utils.zz_int[None, :, :] + box_centers[:, None, :],dtype=jnp.float64,device=device)
-		self._xxloc_ext  = jnp.array(patch_utils.zz_ext[None, :, :] + box_centers[:, None, :],dtype=jnp.float64,device=device)
-
-		self.nx_leg     = self._xxloc_ext.shape[1]
-		self.nt_cheb    = self._xxloc_int.shape[1]
-
+		# indexing for the Chebyshev discretization
 		JJc   = patch_utils.JJ_int
 		if self.ndim == 2:
-			self.Jx_cheb = jnp.hstack([JJc.Jl, JJc.Jr, JJc.Jd, JJc.Ju])
+			Jx_cheb = jnp.hstack([JJc.Jl, JJc.Jr, JJc.Jd, JJc.Ju])
 		else:
-			self.Jx_cheb = jnp.hstack([JJc.Jl, JJc.Jr, JJc.Jd, JJc.Ju, JJc.Jb, JJc.Jf])
-		self.Ji_cheb     = jnp.hstack([JJc.Ji])
-		self.Jx_cheb_uni = jnp.setdiff1d(jnp.arange(self.nt_cheb), self.Ji_cheb)
+			Jx_cheb = jnp.hstack([JJc.Jl, JJc.Jr, JJc.Jd, JJc.Ju, JJc.Jb, JJc.Jf])
 
-		self.Jx_cheb     = jax.device_put(self.Jx_cheb,device=device)
-		self.Ji_cheb     = jax.device_put(self.Ji_cheb,device=device)
-		self.Jx_cheb_uni = jax.device_put(self.Jx_cheb_uni,device=device)
+		Jx_cheb_uni, inds_uni = jnp.unique(Jx_cheb,return_index=True)
+		Ji_cheb               = JJc.Ji
 
-		self.inds_uni    = jnp.unique(self.Jx_cheb,return_index=True)[1]
+		Jorder                = jnp.hstack([Ji_cheb,Jx_cheb_uni])
+		Ds                    = jax.tree.map(lambda x: jnp.array(x[Jorder][:,Jorder], dtype=jnp.float64,device=device),patch_utils.Ds)
 
-		self.Nx_cheb       = jnp.array(patch_utils.Nx_stack,dtype=jnp.float64,device=device)
-		self.chebfleg_mat  = jnp.array(patch_utils.chebfleg_exterior_mat,dtype=jnp.float64,device=device)
+		# differentiate on total patch and restrict to Jx_cheb
+		self.Nx_cheb       = jnp.array(patch_utils.Nx_stack[:,Jorder],dtype=jnp.float64,device=device)
+
+		# interpolate from Legendre exterior grid to Jx_cheb_uni
+		self.chebfleg_mat  = jnp.array(patch_utils.chebfleg_exterior_mat[inds_uni],dtype=jnp.float64,device=device)
+		# interpolate from Jx_cheb to Legendre exterior grid
 		self.legfcheb_mat  = jnp.array(patch_utils.legfcheb_exterior_mat,dtype=jnp.float64,device=device)
+
+		zz_patch_cheb = patch_utils.zz_int[Jorder]
+		zz_patch_leg  = patch_utils.zz_ext
+
+		self.nt_cheb  = zz_patch_cheb.shape[0]; self.nx_leg = zz_patch_leg.shape[0]
+		self.ni_cheb  = Ji_cheb.shape[0]
+
+		# interior/exterior local points: (batch, nt, ndim)
+		box_centers      = jnp.vstack(( box_centers, jnp.zeros((self.nbatch_ext-self.nbatch,box_centers.shape[-1])) ))
+		self._xxloc_int  = jnp.array(zz_patch_cheb[None, :, :] + box_centers[:, None, :],dtype=jnp.float64,device=device)
+		self._xxloc_ext  = jnp.array(zz_patch_leg [None, :, :] + box_centers[:, None, :],dtype=jnp.float64,device=device)
 
 		self._eye_block = jnp.eye(self.nx_leg, dtype=jnp.float64,device=device)[None, :, :]
 		self._zero_ff   = jnp.zeros((1, self.nt_cheb, 1), dtype=jnp.float64,device=device) 
@@ -123,22 +127,35 @@ class LeafSubdomain:
 		return self._xxloc_ext[:self.nbatch]
 
 	@functools.partial(jax.jit,static_argnums=0)
+	def solve_dir_helper_with_tile(self, xxloc_bnd, uu_dir, ff_body):
+		B       = xxloc_bnd.shape[0]
+		nrhs    = uu_dir.shape[-1] if uu_dir is not None else self.nx_leg
+
+		Aloc_bnd = self._get_Aloc(xxloc_bnd)
+		Aib = Aloc_bnd[:, :self.ni_cheb, self.ni_cheb:]
+		Aii = Aloc_bnd[:, :self.ni_cheb, :self.ni_cheb]
+
+		equiv_dir = self.chebfleg_mat @ uu_dir
+
+		rhs   = ff_body[:,:self.ni_cheb] - (Aib @ equiv_dir)
+		sol_i = jnp.linalg.solve(Aii, rhs)  # solves each batch & RHS
+
+		return jnp.concatenate([sol_i,jnp.tile(equiv_dir,(B,1,1))],axis=1)
+
+	@functools.partial(jax.jit,static_argnums=0)
 	def solve_dir_helper(self, xxloc_bnd, uu_dir, ff_body):
 		B       = xxloc_bnd.shape[0]
 		nrhs    = uu_dir.shape[-1] if uu_dir is not None else self.nx_leg
 
 		Aloc_bnd = self._get_Aloc(xxloc_bnd)
-		Aib = Aloc_bnd[:, self.Ji_cheb][:, :, self.Jx_cheb_uni]
-		Aii = Aloc_bnd[:, self.Ji_cheb][:, :, self.Ji_cheb]
+		Aib = Aloc_bnd[:, :self.ni_cheb, self.ni_cheb:]
+		Aii = Aloc_bnd[:, :self.ni_cheb, :self.ni_cheb]
 
-		res = jnp.zeros((B, self.nt_cheb, nrhs))
-		tmp = self.chebfleg_mat @ uu_dir
-		res = res.at[:, self.Jx_cheb_uni].set(tmp[...,self.inds_uni,:])
+		equiv_dir = self.chebfleg_mat @ uu_dir
 
-		rhs   = ff_body[:,self.Ji_cheb] - (Aib @ res[:, self.Jx_cheb_uni])
+		rhs   = ff_body[:,:self.ni_cheb] - (Aib @ equiv_dir)
 		sol_i = jnp.linalg.solve(Aii, rhs)  # solves each batch & RHS
-		res   = res.at[:, self.Ji_cheb].set(sol_i)
-		return res
+		return jnp.concatenate([sol_i,equiv_dir],axis=1)
 
 	def solve_dir(self, uu_dir, ff_body=None):
 		"""
@@ -190,8 +207,8 @@ class LeafSubdomain:
 	@functools.partial(jax.jit,static_argnums=0)
 	def _reduce_chunk_body_load(self, xx_chunk, ff_chunk):
 
-		loc_sol = self.solve_dir_helper(xx_chunk, self._zero_dir, -ff_chunk)
-		tmp     = self.Nx_cheb[:, self.Ji_cheb] @ loc_sol[:, self.Ji_cheb]		
+		loc_sol = self.solve_dir_helper_with_tile(xx_chunk, self._zero_dir, -ff_chunk)
+		tmp     = self.Nx_cheb[:, :self.ni_cheb] @ loc_sol[:, :self.ni_cheb]		
 		return self.legfcheb_mat @ tmp
 
 	def reduce_body_load(self, ff_body):
@@ -233,7 +250,7 @@ class LeafSubdomain:
 			Returns a DeviceArray frag of shape (chunk_size, nx_leg, nx_leg),
 			which is exactly the DtN‐block corresponding to these chunk_size leaves.
 			"""
-			loc = self.solve_dir_helper(
+			loc = self.solve_dir_helper_with_tile(
 				xx_chunk,
 				uu_dir  = self._eye_block,
 				ff_body = self._zero_ff
@@ -262,15 +279,13 @@ class LeafSubdomain:
 			end   = start + self.chunk_size
 
 			xx_chunk = self._xxloc_int[start:end]   # JAX array of shape (chunk_size, nt_cheb, ndim)
-
 			frag_dev = self._compute_chunk_DtN(xx_chunk)
 
 			real_start = start
 			real_end   = min(end, self.nbatch)
-			length     = real_end - real_start 
+			length     = real_end - real_start
 
 			if length > 0:
 				frag_chunk_host = np.array(frag_dev[:length])   # shape (length, nx_leg, nx_leg)
 				out_host[real_start:real_end, :, :] = frag_chunk_host
-
 		return out_host
