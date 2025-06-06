@@ -3,9 +3,11 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import functools
-
-import os
 import numpy as np
+import os
+
+##########################################################################################################################
+#####################################      NUMPY HELPERS              ####################################################
 
 def query_total_memory():
 	pages = os.sysconf('SC_PHYS_PAGES')
@@ -15,8 +17,231 @@ def query_total_memory():
 def diag_mult(diag, M):
 	return diag[..., None] * M
 
+def build_pdo_terms(pdo, Ds, ndim, nt_cheb, device):
+	"""
+	Assemble everything having to do with pdo.*  into:
+	  1) a single JAX array Ds_stack  of shape (K, m, m),
+	  2) a JAX array consts       of shape (K,),
+	  3) a Python list func_list  of length K, where each element is a function handle.
+
+	Arguments:
+	  pdo      : some object with attributes c11, c22, c12, c1, c2, c, c33, c13, c23, c3, ...
+	  Ds       : an object whose attributes D11, D22, D12, D1, D2, I (eye), D33, D13, D23, D3, ... are already JAX arrays
+				 of shape (m, m), sitting on 'device'.
+	  ndim     : either 2 or 3
+	  nt_cheb  : the size m of the Chebyshev‐local points
+	  device   : a JAX device (so that we can .astype(..., device=device) if needed)
+
+	Returns:
+	  Ds_stack : jnp.ndarray of shape (K, m, m), dtype=float64, device=device
+	  consts   : jnp.ndarray of shape (K,),   dtype=float64, device=device
+	  func_list: Python list of length K, each entry is a callable that maps xxloc → a (batch, m, 1)-shaped array
+	"""
+
+	Ds_list    = []
+	consts_list= []
+	func_list  = []
+
+	def helper_append(Dmat,func,const):
+		Ds_list.append(jnp.array(Dmat,dtype=jnp.float64,device=device))
+		func_list.append(func)
+		consts_list.append(const)
+
+	helper_append(Ds.D11,pdo.c11,-1.0)
+	helper_append(Ds.D22,pdo.c22,-1.0)
+
+	if pdo.c12 is not None:
+		helper_append(Ds.D12,pdo.c12,-2.0)
+
+	if pdo.c1 is not None:
+		helper_append(Ds.D1,pdo.c1,+1.0)
+
+	if pdo.c2 is not None:
+		helper_append(Ds.D2,pdo.c2,+1.0)
+
+	# c (scalar), I, +1
+	if getattr(pdo, "c", None) is not None:
+		I = jnp.eye(nt_cheb, dtype=jnp.float64, device=device)
+		helper_append(I,pdo.c,+1.0)
+
+	if ndim == 3:
+
+		helper_append(Ds.D33,pdo.c33,-1.0)
+
+		if pdo.c13 is not None:
+			helper_append(Ds.D13,pdo.c13,-2.0)
+		if pdo.c23 is not None:
+			helper_append(Ds.D13,pdo.c23,-2.0)
+
+		if pdo.c3 is not None:
+			helper_append(Ds.D2,pdo.c3,+1.0)
+
+	# Stack everything along axis=0 so we get shape (K, m, m).
+	Ds_stack = jnp.stack(Ds_list, axis=0)
+	consts   = jnp.array(consts_list, dtype=jnp.float64, device=device)
+
+	return Ds_stack, consts, tuple(func_list)
+
+##########################################################################################################################
+#####################################      JIT-COMPILED FUNCTIONS     ####################################################
+
+@functools.partial(jax.jit,
+				   static_argnums=(-1,))
+def _get_Aloc(xxloc, Ds_stack, consts, funcs):
+	m = xxloc.shape[-2]
+
+	if xxloc.ndim == 2:
+		out_shape = (m, m)
+	else:
+		out_shape = (xxloc.shape[0], m, m)
+
+	Aloc = jnp.zeros(out_shape, dtype=jnp.float64)
+	K    = Ds_stack.shape[0]
+
+	for i in range(K):
+		c_fun = funcs[i]           # Python callable (static: not traced)
+		D_mat = Ds_stack[i, :, :]  # jnp.ndarray (m, m)
+		coeff = consts[i]          # jnp.scalar
+
+		cvals = c_fun(xxloc)       # → (m,1)  or  (batch, m,1)
+		Aloc = Aloc + coeff * diag_mult(cvals, D_mat)
+
+	return Aloc
+
+@functools.partial(jax.jit,
+				   # argument indices 4 (c_fns), 5 (consts), 8 (ni_cheb) are static
+				   static_argnums=(-2,-1))
+def solve_dir_helper_with_tile(
+	xxloc_bnd:    jnp.ndarray,  # (batch, nt_cheb, ndim)
+	uu_dir:       jnp.ndarray,  # (batch, nx_leg, nrhs) or (1, nx_leg, nrhs)
+	ff_body:      jnp.ndarray,  # (batch, nt_cheb, nrhs) or (1, nt_cheb, nrhs)
+	chebfleg_mat: jnp.ndarray,  # (nb_cheb, nx_leg)
+	Nx_cheb:      jnp.ndarray,  # (nx_leg, nt_cheb)
+	D_stack:      jnp.ndarray,  # (N_terms, nt_cheb, nt_cheb)
+	consts:       jnp.ndarray,  # (N_terms,)
+	c_fns:        tuple,        # length N_terms tuple of Python callables
+	ni_cheb:      int           # number of interior Chebyshev nodes
+) -> jnp.ndarray:
+
+	B = xxloc_bnd.shape[0]
+	nrhs = uu_dir.shape[-1]
+
+	Aloc_bnd = _get_Aloc(xxloc_bnd, D_stack, consts, c_fns)
+
+	# 4) Partition into interior‐interior and interior‐boundary blocks:
+	Aii = Aloc_bnd[:, :ni_cheb, :ni_cheb]   # (batch, ni_cheb, ni_cheb)
+	Aib = Aloc_bnd[:, :ni_cheb, ni_cheb:]   # (batch, ni_cheb, nb_cheb)
+
+	# 5) Compute the “equivalent Dirichlet data” on the boundary:
+	equiv_dir = chebfleg_mat @ uu_dir       # (batch, nb_cheb, nrhs)
+
+	# 6) Build RHS for interior solve: ff_body_interior − Aib @ equiv_dir
+	rhs = ff_body[:, :ni_cheb, :] - (Aib @ equiv_dir)   # (batch, ni_cheb, nrhs)
+
+	# 7) Solve interior block:
+	sol_i = jnp.linalg.solve(Aii, rhs)   # (batch, ni_cheb, nrhs)
+
+	# 8) Concatenate interior solution + boundary “equiv_dir” → (batch, nt_cheb, nrhs)
+	return jnp.concatenate([sol_i, jnp.tile(equiv_dir,(B,1,1))], axis=1)
+
+@functools.partial(jax.jit,
+				   # argument indices 4 (c_fns), 5 (consts), 8 (ni_cheb) are static
+				   static_argnums=(-2,-1))
+def solve_dir_helper(
+	xxloc_bnd:    jnp.ndarray,  # (batch, nt_cheb, ndim)
+	uu_dir:       jnp.ndarray,  # (batch, nx_leg, nrhs) or (1, nx_leg, nrhs)
+	ff_body:      jnp.ndarray,  # (batch, nt_cheb, nrhs) or (1, nt_cheb, nrhs)
+	chebfleg_mat: jnp.ndarray,  # (nb_cheb, nx_leg)
+	Nx_cheb:      jnp.ndarray,  # (nx_leg, nt_cheb)
+	D_stack:      jnp.ndarray,  # (N_terms, nt_cheb, nt_cheb)
+	consts:       jnp.ndarray,  # (N_terms,)
+	c_fns:        tuple,        # length N_terms tuple of Python callables
+	ni_cheb:      int           # number of interior Chebyshev nodes
+) -> jnp.ndarray:
+
+	B = xxloc_bnd.shape[0]
+	nrhs = uu_dir.shape[-1]
+
+	Aloc_bnd = _get_Aloc(xxloc_bnd, D_stack, consts, c_fns)
+
+	# 4) Partition into interior‐interior and interior‐boundary blocks:
+	Aii = Aloc_bnd[:, :ni_cheb, :ni_cheb]   # (batch, ni_cheb, ni_cheb)
+	Aib = Aloc_bnd[:, :ni_cheb, ni_cheb:]   # (batch, ni_cheb, nb_cheb)
+
+	# 5) Compute the “equivalent Dirichlet data” on the boundary:
+	equiv_dir = chebfleg_mat @ uu_dir       # (batch, nb_cheb, nrhs)
+
+	# 6) Build RHS for interior solve: ff_body_interior − Aib @ equiv_dir
+	rhs = ff_body[:, :ni_cheb, :] - (Aib @ equiv_dir)   # (batch, ni_cheb, nrhs)
+
+	# 7) Solve interior block:
+	sol_i = jnp.linalg.solve(Aii, rhs)   # (batch, ni_cheb, nrhs)
+
+	# 8) Concatenate interior solution + boundary “equiv_dir” → (batch, nt_cheb, nrhs)
+	return jnp.concatenate([sol_i, equiv_dir],axis=1)
+
+@functools.partial(jax.jit,
+				   static_argnums=(-2,-1))
+def compute_chunk_DtN(
+	xxloc_bnd:    jnp.ndarray,  # (batch, nt_cheb, ndim)
+	uu_dir:       jnp.ndarray,  # (1, nx_leg, nx_leg)
+	ff_body:      jnp.ndarray,  # (1, nt_cheb, 1)
+	legfcheb_mat: jnp.ndarray,  # (nx_leg, nb_cheb)
+	chebfleg_mat: jnp.ndarray,  # (nb_cheb, nx_leg)
+	Nx_cheb:      jnp.ndarray,  # (nx_leg, nt_cheb)
+	D_stack:      jnp.ndarray,  # (N_terms, nt_cheb, nt_cheb)
+	consts:       jnp.ndarray,  # (N_terms,)	
+	c_fns:        tuple,        # length N_terms
+	ni_cheb:      int           # number of interior Chebyshev nodes
+) -> jnp.ndarray:
+	"""
+	Compute a DtN‐block for each leaf in xx_chunk:
+	  1) Solve with Dirichlet = eye_block, body = 0
+	  2) interior→Nx_cheb→ boundary via chebfleg_mat
+	Returns: (batch, nx_leg, nx_leg).
+	"""
+	# 1) Solve with tile:
+	loc = solve_dir_helper_with_tile(
+		xxloc_bnd,
+		uu_dir,
+		ff_body,
+		chebfleg_mat,
+		Nx_cheb,
+		D_stack,
+		consts,
+		c_fns,
+		ni_cheb
+	)  # (batch, nt_cheb, nx_leg)
+
+	tmp  = Nx_cheb @ loc
+	return legfcheb_mat @ tmp
+
+@functools.partial(jax.jit,static_argnums=(-1,-2))
+def reduce_chunk_body_load(
+	xxloc_bnd:    jnp.ndarray,  # (batch, nt_cheb, ndim)
+	uu_dir:       jnp.ndarray,  # (batch, nx_leg, nrhs) or (1, nx_leg, nrhs)
+	ff_body:      jnp.ndarray,  # (batch, nt_cheb, nrhs) or (1, nt_cheb, nrhs)
+	legfcheb_mat: jnp.ndarray,  # (nx_leg, nb_cheb)
+	chebfleg_mat: jnp.ndarray,  # (nb_cheb, nx_leg)
+	Nx_cheb:      jnp.ndarray,  # (nx_leg, nt_cheb)
+	D_stack:      jnp.ndarray,  # (N_terms, nt_cheb, nt_cheb)
+	consts:       jnp.ndarray,  # (N_terms,)
+	c_fns:        tuple,        # length N_terms tuple of Python callables
+	ni_cheb:      int           # number of interior Chebyshev nodes):
+	):
+
+	loc_sol = solve_dir_helper_with_tile(
+		xxloc_bnd,uu_dir,-ff_body,chebfleg_mat,Nx_cheb,\
+		D_stack,consts,c_fns,ni_cheb
+	)
+
+	tmp     = Nx_cheb[:, :ni_cheb] @ loc_sol[:, :ni_cheb]		
+	return legfcheb_mat @ tmp
+
+##########################################################################################################################
+
 class LeafSubdomain:
-	def __init__(self, box_centers, pdo, patch_utils):
+	def __init__(self, box_centers, pdo, patch_utils, verbose):
 
 		# box_centers: (batch, ndim)
 		box_centers     = box_centers if box_centers.ndim > 1 else box_centers[None, :]
@@ -38,7 +263,10 @@ class LeafSubdomain:
 		chunk_calc      = int(max_mem // ((self.p**self.ndim)**2  * const_overhead * const_nbytes))
 		self.chunk_size = max( min(self.nbatch, chunk_calc), 1)
 		self.nbatch_ext = ((self.nbatch+self.chunk_size-1)//self.chunk_size) * self.chunk_size
-		print("Using device:",device,"for HPS leaf computations (", self.nbatch, "leaves with parallel chunk size",self.chunk_size,")")
+
+		if (verbose):
+			print("Using device:",device,"for HPS leaf computations (",\
+			self.nbatch, "leaves with parallel chunk size",self.chunk_size,")")
 
 		# indexing for the Chebyshev discretization
 		JJc   = patch_utils.JJ_int
@@ -78,47 +306,11 @@ class LeafSubdomain:
 		self._zero_ff   = jnp.zeros((1, self.nt_cheb, 1), dtype=jnp.float64,device=device) 
 		self._zero_dir  = jnp.zeros((1, self.nx_leg, 1), dtype=jnp.float64,device=device) 
 
-		terms_pdo = [(pdo.c11, Ds.D11, -1), (pdo.c22, Ds.D22, -1)]
-		if pdo.c12 is not None:
-			terms_pdo.append((pdo.c12, Ds.D12, -2))
-		if pdo.c1  is not None:
-			terms_pdo.append((pdo.c1,  Ds.D1,  +1))
-		if pdo.c2  is not None:
-			terms_pdo.append((pdo.c2,  Ds.D2,  +1))
-		if pdo.c   is not None:
-			terms_pdo.append((pdo.c, jnp.eye(self.nt_cheb, dtype=jnp.float64, device=device), +1))
-
-		if self.ndim == 3:
-			terms_pdo.append((pdo.c33, Ds.D33, -1))
-			if pdo.c13 is not None:
-				terms_pdo.append((pdo.c13, Ds.D13, -2))
-			if pdo.c23 is not None:
-				terms_pdo.append((pdo.c23, Ds.D23, -2))
-			if pdo.c3 is not None:
-				terms_pdo.append((pdo.c3, Ds.D3, +1))
-
-		@jax.jit
-		def _get_Aloc(xxloc):
-			"""
-			JAX version of get_Aloc.
-			xxloc: either (m, ndim) or (batch, m, ndim)
-			returns: (m, m) or (batch, m, m)
-			"""
-			m = xxloc.shape[-2]
-			ndim = xxloc.shape[-1]
-			# Determine output shape
-			out_shape = (m, m) if xxloc.ndim == 2 else (xxloc.shape[0], m, m)
-			Aloc = jnp.zeros(out_shape)
-
-			for (c_func,Dterm,const) in terms_pdo:
-				Aloc += const * diag_mult(c_func(xxloc),Dterm)
-
-			return Aloc
-
-		self._get_Aloc = _get_Aloc
+		self.D_stack, self.consts, self.c_fns = \
+			build_pdo_terms(pdo, Ds, self.ndim, self.nt_cheb, device)
 
 	def Aloc(self):
-		return self._get_Aloc(self._xxloc_int)[:,self.nbatch]
+		return _get_Aloc(self._xxloc_int,self.D_stack, self.c_fns, self.consts)[:,self.nbatch]
 
 	@property
 	def xxloc_int(self):
@@ -127,37 +319,6 @@ class LeafSubdomain:
 	@property
 	def xxloc_ext(self):
 		return self._xxloc_ext[:self.nbatch]
-
-	@functools.partial(jax.jit,static_argnums=0)
-	def solve_dir_helper_with_tile(self, xxloc_bnd, uu_dir, ff_body):
-		B       = xxloc_bnd.shape[0]
-		nrhs    = uu_dir.shape[-1] if uu_dir is not None else self.nx_leg
-
-		Aloc_bnd = self._get_Aloc(xxloc_bnd)
-		Aib = Aloc_bnd[:, :self.ni_cheb, self.ni_cheb:]
-		Aii = Aloc_bnd[:, :self.ni_cheb, :self.ni_cheb]
-
-		equiv_dir = self.chebfleg_mat @ uu_dir
-
-		rhs   = ff_body[:,:self.ni_cheb] - (Aib @ equiv_dir)
-		sol_i = jnp.linalg.solve(Aii, rhs)  # solves each batch & RHS
-
-		return jnp.concatenate([sol_i,jnp.tile(equiv_dir,(B,1,1))],axis=1)
-
-	@functools.partial(jax.jit,static_argnums=0)
-	def solve_dir_helper(self, xxloc_bnd, uu_dir, ff_body):
-		B       = xxloc_bnd.shape[0]
-		nrhs    = uu_dir.shape[-1] if uu_dir is not None else self.nx_leg
-
-		Aloc_bnd = self._get_Aloc(xxloc_bnd)
-		Aib = Aloc_bnd[:, :self.ni_cheb, self.ni_cheb:]
-		Aii = Aloc_bnd[:, :self.ni_cheb, :self.ni_cheb]
-
-		equiv_dir = self.chebfleg_mat @ uu_dir
-
-		rhs   = ff_body[:,:self.ni_cheb] - (Aib @ equiv_dir)
-		sol_i = jnp.linalg.solve(Aii, rhs)  # solves each batch & RHS
-		return jnp.concatenate([sol_i,equiv_dir],axis=1)
 
 	def solve_dir(self, uu_dir, ff_body=None):
 		"""
@@ -195,23 +356,23 @@ class LeafSubdomain:
 			xx_chunk = self._xxloc_int[start:end]
 			uu_chunk = jnp.array(uu_ext[start:end],device=device)
 			ff_chunk = jnp.array(ff_ext[start:end],device=device)
-			frag_dev = self.solve_dir_helper(xx_chunk,uu_chunk,ff_chunk)
+			frag_dev = solve_dir_helper(xx_chunk,uu_chunk,ff_chunk,\
+				self.chebfleg_mat,       # (nb_cheb, nx_leg)
+				self.Nx_cheb,            # (nx_leg, nt_cheb)
+				self.D_stack,            # (N_terms, nt_cheb, nt_cheb)
+				self.consts,             # jnp
+				self.c_fns,              # tuple of callables (static)
+				self.ni_cheb             # int (static))
+				)
 
 			real_start = start
 			real_end   = min(end, self.nbatch)
 			length     = real_end - real_start 
 
 			if length > 0:
-				frag_chunk_host = np.array(frag_dev)[:length,self.inv_perm_ni_cheb]   # shape (length, nx_leg, nx_leg)
+				frag_chunk_host = np.array(frag_dev)[:length,self.inv_perm_ni_cheb]  
 				out_host[real_start:real_end, :, :] = frag_chunk_host
 		return out_host
-
-	@functools.partial(jax.jit,static_argnums=0)
-	def _reduce_chunk_body_load(self, xx_chunk, ff_chunk):
-
-		loc_sol = self.solve_dir_helper_with_tile(xx_chunk, self._zero_dir, -ff_chunk)
-		tmp     = self.Nx_cheb[:, :self.ni_cheb] @ loc_sol[:, :self.ni_cheb]		
-		return self.legfcheb_mat @ tmp
 
 	def reduce_body_load(self, ff_body):
 		if (self.nbatch == 1 and ff_body.ndim == 2):
@@ -233,46 +394,39 @@ class LeafSubdomain:
 
 			xx_chunk = self._xxloc_int[start:end]
 			ff_chunk = jnp.array(ff_ext[start:end],device=device)
-			frag_dev = self._reduce_chunk_body_load(xx_chunk,ff_chunk)
+			frag_dev = reduce_chunk_body_load(xx_chunk,\
+				self._zero_dir, ff_chunk, 
+				self.legfcheb_mat,
+				self.chebfleg_mat,       # (nb_cheb, nx_leg)
+				self.Nx_cheb,            # (nx_leg, nt_cheb)
+				self.D_stack,            # (N_terms, nt_cheb, nt_cheb)
+				self.consts,             # jnp
+				self.c_fns,              # tuple of callables (static)
+				self.ni_cheb             # int (static))
+				)
 
 			real_start = start
 			real_end   = min(end, self.nbatch)
 			length     = real_end - real_start 
 
 			if length > 0:
-				frag_chunk_host = np.array(frag_dev[:length])   # shape (length, nx_leg, nx_leg)
+				frag_chunk_host = np.array(frag_dev[:length]) 
 				out_host[real_start:real_end, :, :] = frag_chunk_host
 		return out_host
 
-
-	@functools.partial(jax.jit, static_argnums=0)
-	def _compute_chunk_DtN(self, xx_chunk):
-			"""
-			xx_chunk: a JAX array of shape (chunk_size, nt_cheb, ndim)
-			Returns a DeviceArray frag of shape (chunk_size, nx_leg, nx_leg),
-			which is exactly the DtN‐block corresponding to these chunk_size leaves.
-			"""
-			loc = self.solve_dir_helper_with_tile(
-				xx_chunk,
-				uu_dir  = self._eye_block,
-				ff_body = self._zero_ff
-			)
-
-			tmp  = self.Nx_cheb @ loc
-			frag = self.legfcheb_mat @ tmp
-
-			return frag
-
-	def DtN(self):
+	# ------------------------------------------------------------------------
+	def DtN(self) -> np.ndarray:
 		"""
-		Compute the DtN “matrix” for each of the `nbatch` leaves, by slicing
-		through self._xxloc_int in chunks of size self.chunk_size.  We never
-		allocate the full (nbatch_ext × nx_leg × nx_leg) array on the device.
-		Instead, we build a host‐side NumPy array of shape (nbatch × nx_leg × nx_leg),
-		fill it chunk by chunk, and return it as a NumPy array.
+		Compute the DtN “matrix” for each of the nbatch leaves, by slicing
+		through self._xxloc_int in chunks of size self.chunk_size. We never
+		allocate the full (nbatch_ext × nx_leg × nx_leg) on the device at once.
+		Instead, we fill a host‐side NumPy buffer chunk by chunk.
 		"""
-		# Pre‐allocate a host‐side numpy buffer for “real” leaves:
-		out_host = np.zeros((self.nbatch, self.nx_leg, self.nx_leg), dtype=np.float64)
+		device = self._xxloc_int.device  # still a JAX array on some device
+
+		# 1) Pre‐allocate a host‐side buffer for “real” leaves only:
+		out_host = np.zeros((self.nbatch, self.nx_leg, self.nx_leg),
+							dtype=np.float64)
 
 		nchunks = self.nbatch_ext // self.chunk_size
 
@@ -280,14 +434,30 @@ class LeafSubdomain:
 			start = i * self.chunk_size
 			end   = start + self.chunk_size
 
-			xx_chunk = self._xxloc_int[start:end]   # JAX array of shape (chunk_size, nt_cheb, ndim)
-			frag_dev = self._compute_chunk_DtN(xx_chunk)
+			# 2) Slice the device‐side xxloc_int for this chunk:
+			xx_chunk = self._xxloc_int[start:end]   # JAX array (chunk_size, nt_cheb, ndim)
 
+			# 3) Call the standalone JIT’d DtN‐helper:
+			frag_dev = compute_chunk_DtN(
+				xx_chunk,
+				self._eye_block,         # (1, nx_leg, nx_leg)
+				self._zero_ff,           # (1, nt_cheb, 1)
+				self.legfcheb_mat,
+				self.chebfleg_mat,       # (nb_cheb, nx_leg)
+				self.Nx_cheb,            # (nx_leg, nt_cheb)
+				self.D_stack,            # (N_terms, nt_cheb, nt_cheb)
+				self.consts,             # jnp
+				self.c_fns,              # tuple of callables (static)
+				self.ni_cheb             # int (static)
+			)  # → JAX array (chunk_size, nx_leg, nx_leg)
+
+			# 4) Copy only the “real” leaves (the first length rows) back to host:
 			real_start = start
 			real_end   = min(end, self.nbatch)
 			length     = real_end - real_start
 
 			if length > 0:
-				frag_chunk_host = np.array(frag_dev[:length])   # shape (length, nx_leg, nx_leg)
-				out_host[real_start:real_end, :, :] = frag_chunk_host
+				sub_np = np.array(frag_dev[:length])   # blocks, copies (length, nx_leg, nx_leg)
+				out_host[real_start:real_end, :, :] = sub_np
+
 		return out_host

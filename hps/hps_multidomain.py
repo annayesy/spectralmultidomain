@@ -8,7 +8,7 @@ from hps.sparse_utils    import CSRBuilder
 from hps.pde_solver      import AbstractPDESolver
 from time                import time
 
-def get_leaf_DtNs(pdo, box_geom, a, p):
+def get_leaf_DtNs(pdo, box_geom, a, p,verbose):
 
     len_dim  = box_geom[1] - box_geom[0]
     npan_dim = np.round( len_dim / (2*a)).astype(int)
@@ -46,7 +46,7 @@ def get_leaf_DtNs(pdo, box_geom, a, p):
                     box_ind  = i + j * npan_dim[0] + k * npan_dim[0] * npan_dim[1]
                     box_centers [box_ind] = root_loc + a
 
-    return npan_dim, LeafSubdomain(box_centers,pdo,patch_utils)
+    return npan_dim, LeafSubdomain(box_centers,pdo,patch_utils,verbose)
 
 def get_duplicated_interior_points_2d(p,npan_dim):
 
@@ -169,7 +169,7 @@ class HPSMultidomain(AbstractPDESolver):
         self._geom     = geom
         self._p        = p
 
-        self.npan_dim, self.leaf_subdomains = get_leaf_DtNs(pdo,self._box_geom, a, self.p)
+        self.npan_dim, self.leaf_subdomains = get_leaf_DtNs(pdo,self._box_geom, a, self.p,verbose)
         xxext_list    = self.leaf_subdomains.xxloc_ext
         xxint_list    = self.leaf_subdomains.xxloc_int
         nbatch        = self.leaf_subdomains.nbatch
