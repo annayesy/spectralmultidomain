@@ -94,10 +94,9 @@ def build_pdo_terms(pdo, Ds, ndim, nt_cheb, device):
     return Ds_stack, consts, tuple(func_list)
 
 # ------------------------------------------------------------------------------
-# JIT-COMPILED FUNCTIONS
+# JAX HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
 
-@functools.partial(jax.jit, static_argnums=(-1,))
 def _get_Aloc(xxloc, Ds_stack, consts, funcs):
     """
     Evaluate the local PDE operator A at points xxloc in each patch.
@@ -133,7 +132,6 @@ def _get_Aloc(xxloc, Ds_stack, consts, funcs):
 
     return Aloc
 
-@functools.partial(jax.jit, static_argnums=(-2, -1))
 def solve_dir_helper_with_tile(
     xxloc_bnd:    jnp.ndarray,  # (batch, nt_cheb, ndim)
     uu_dir:       jnp.ndarray,  # (batch, nx_leg, nrhs) or (1, nx_leg, nrhs)
@@ -181,7 +179,6 @@ def solve_dir_helper_with_tile(
     # 6) Concatenate interior solution and boundary data
     return jnp.concatenate([sol_i, jnp.tile(equiv_dir, (B, 1, 1))], axis=1)
 
-@functools.partial(jax.jit, static_argnums=(-2, -1))
 def solve_dir_helper(
     xxloc_bnd:    jnp.ndarray,  # (batch, nt_cheb, ndim)
     uu_dir:       jnp.ndarray,  # (batch, nx_leg, nrhs) or (1, nx_leg, nrhs)
@@ -218,7 +215,6 @@ def solve_dir_helper(
     # 6) Concatenate interior solution and boundary data
     return jnp.concatenate([sol_i, equiv_dir], axis=1)
 
-@functools.partial(jax.jit, static_argnums=(-1, -2))
 def compute_chunk_DtN(
     xxloc_bnd:    jnp.ndarray,  # (batch, nt_cheb, ndim)
     uu_dir:       jnp.ndarray,  # (1, nx_leg, nx_leg) — identity block for Dirichlet BC
@@ -258,7 +254,6 @@ def compute_chunk_DtN(
     tmp = Nx_cheb @ loc
     return legfcheb_mat @ tmp
 
-@functools.partial(jax.jit, static_argnums=(-2, -1))
 def reduce_chunk_body_load(
     xxloc_bnd:    jnp.ndarray,  # (batch, nt_cheb, ndim)
     uu_dir:       jnp.ndarray,  # (batch, nx_leg, nrhs) or (1, nx_leg, nrhs)
@@ -329,8 +324,8 @@ class LeafSubdomain:
             max_mem = max(int(query_total_memory() / 5), int(5e9))
 
         # Estimate how many patches to process in parallel
-        const_overhead = 4
-        const_nbytes = 8
+        const_overhead = 12
+        const_nbytes   = 8
         chunk_calc = int(max_mem // ((self.p ** self.ndim) ** 2 * const_overhead * const_nbytes))
         self.chunk_size = max(min(self.nbatch, chunk_calc), 1)
         self.nbatch_ext = ((self.nbatch + self.chunk_size - 1) // self.chunk_size) * self.chunk_size
