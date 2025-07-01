@@ -96,7 +96,6 @@ def build_pdo_terms(pdo, Ds, ndim, nt_cheb, device):
 # ------------------------------------------------------------------------------
 # JAX HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
-
 def _get_Aloc(xxloc, Ds_stack, consts, funcs):
     """
     Evaluate the local PDE operator A at points xxloc in each patch.
@@ -178,6 +177,7 @@ def solve_dir_helper_with_tile(
 
     # 6) Concatenate interior solution and boundary data
     return jnp.concatenate([sol_i, jnp.tile(equiv_dir, (B, 1, 1))], axis=1)
+
 
 def solve_dir_helper(
     xxloc_bnd:    jnp.ndarray,  # (batch, nt_cheb, ndim)
@@ -324,7 +324,7 @@ class LeafSubdomain:
             max_mem = max(int(query_total_memory() / 5), int(5e9))
 
         # Estimate how many patches to process in parallel
-        const_overhead = 12
+        const_overhead = 15
         const_nbytes   = 8
         chunk_calc = int(max_mem // ((self.p ** self.ndim) ** 2 * const_overhead * const_nbytes))
         self.chunk_size = max(min(self.nbatch, chunk_calc), 1)
@@ -332,7 +332,7 @@ class LeafSubdomain:
 
         if verbose:
             print(
-                "Using device:", device,
+                "\t Using device:", device,
                 "for HPS leaf computations (",
                 self.nbatch, "leaves with chunk size", self.chunk_size, ")"
             )

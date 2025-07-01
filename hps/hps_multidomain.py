@@ -230,6 +230,10 @@ class HPSMultidomain(AbstractPDESolver):
         # Partition domain into leaves and build LeafSubdomain
         self.npan_dim, self.box_centers, self.patch_utils = get_leaf_DtNs(pdo, self._box_geom, a, p, verbose)
 
+        if (verbose):
+            print("Ntot=%d, p=%d, ndim=%d, nboxes=%d" % (np.prod(self.npan_dim) * self._p**len(a),\
+                self._p,len(a), np.prod(self.npan_dim)),"with leaf_boxes on ndim = ",self.npan_dim)
+
         leaf_subdomains = LeafSubdomain(self.box_centers, self.pdo, self.patch_utils,verbose)
         # Retrieve exterior (boundary) and interior coordinates for all leaves
         xxext_list = leaf_subdomains.xxloc_ext  # shape (nbatch, nx_leg, ndim)
@@ -294,6 +298,9 @@ class HPSMultidomain(AbstractPDESolver):
         self._Axi = Axi
         self._Axx = A[self._Jx][:, self._Jx]  # boundary→boundary interactions
         self.stats = {'toc_sparse': toc_sparse, 'toc_dtn': toc_dtn}
+
+        if (verbose):
+            print("\t Toc DtN (parallel) %5.2f s, time sparse assembly %5.2f s" % (toc_dtn,toc_sparse))
 
     def solve_dir_full(self, uu_dir, ff_body=None):
         """

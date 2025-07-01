@@ -1,4 +1,5 @@
 import numpy as np
+import sys
 
 from hps.pdo               import PDO2d, PDO3d, const, get_known_greens
 from hps.geom              import BoxGeometry
@@ -13,7 +14,7 @@ from matplotlib            import pyplot as plt
 #---------------------------------------------------------------------------------------
 p    = 10    # if p > 2, use HPS; otherwise, use FD
 kh   = 30    # Helmholtz parameter (kh = 0 would reduce to Laplace)
-ndim = 2     # 2 or 3
+ndim = 3     # 2 or 3
 
 # --------------------------------------------------------------------------------------
 # DEFINE PDE OPERATOR AND GEOMETRY BASED ON DIMENSION
@@ -21,14 +22,14 @@ ndim = 2     # 2 or 3
 if ndim == 2:
     # In 2D, build a PDO2d: c11 = c22 = 1, zero mixed term, no first derivatives, c = -kh^2
     pdo  = PDO2d(c11=const(1.0), c22=const(1.0), c=const(-kh**2))
-    # Define a rectangular domain [0,1] x [0,0.5]
-    box  = np.array([[0, 0], [1.0, 0.5]])
+    # Define a rectangular domain [0,0.25] x [0,1.0]
+    box  = np.array([[0, 0], [0.25, 1.0]])
     geom = BoxGeometry(box)
 else:
     # In 3D, build a PDO3d: c11 = c22 = c33 = 1, no mixed or first derivatives, c = -kh^2
     pdo  = PDO3d(c11=const(1.0), c22=const(1.0), c33=const(1.0), c=const(-kh**2))
     # Define a rectangular box [0,0.5] x [0,0.5] x [0,1]
-    box  = np.array([[0, 0, 0], [0.5, 0.5, 1]])
+    box  = np.array([[0, 0, 0], [0.25, 1, 1]])
     geom = BoxGeometry(box)
 
 # --------------------------------------------------------------------------------------
@@ -37,7 +38,7 @@ else:
 if p > 2:
     # HPS requires a vector of half-lengths `a` per dimension
     # For 2D, a might be [width_x/1024, width_y/512], for 3D, similar scale
-    a = np.array([1/32, 1/16, 1/32]) if ndim == 3 else np.array([1/1024, 1/512])
+    a = np.array([1/32, 1/32, 1/32]) if ndim == 3 else np.array([1/1024, 1/1024])
 
     tic = time()
     # Build the HPS multidomain solver: this computes per-patch DtN maps and assembles sparse blocks
@@ -51,19 +52,6 @@ else:
     tic = time()
     solver = FDDiscretization(pdo, geom, a)
     toc_dtn = time() - tic
-
-# --------------------------------------------------------------------------------------
-# REPORT PROBLEM SIZE AND TIMINGS
-#---------------------------------------------------------------------------------------
-Ntot = np.prod(solver.npoints_dim)
-print("Ntot = %d, p=%d, kh = %5.2f" % (Ntot, solver.p, kh))
-
-if p > 2:
-    # For HPS, also report time to build sparse Schur complement (stats from solver)
-    print(
-        "\t Time to (get DtNs, assemble sparse) = (%5.2f, %5.2f) s" 
-        % (solver.stats['toc_dtn'], solver.stats['toc_sparse'])
-    )
 
 # --------------------------------------------------------------------------------------
 # FACTORIZE OR SET UP THE Aii SOLVER
@@ -85,6 +73,9 @@ print("\t Relative error %2.5e" % relerr)
 # --------------------------------------------------------------------------------------
 # PLOT GRID POINTS, DISTINGUISHING INTERIOR VS BOUNDARY
 #---------------------------------------------------------------------------------------
+if (solver.Aii.shape[0] > 1e5):
+    sys.exit()
+
 fig = plt.figure()
 if ndim == 2:
     ax = fig.add_subplot()  # 2D scatter plot
