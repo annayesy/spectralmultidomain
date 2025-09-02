@@ -225,6 +225,7 @@ class HPSMultidomain(AbstractPDESolver):
         self._box_geom = geom.bounds
         self._geom     = geom
         self._p        = p
+        self.a         = a
         self.pdo       = pdo
 
         # Partition domain into leaves and build LeafSubdomain

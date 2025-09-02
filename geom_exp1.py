@@ -14,7 +14,7 @@ from matplotlib            import pyplot as plt
 #---------------------------------------------------------------------------------------
 p    = 10    # if p > 2, use HPS; otherwise, use FD
 kh   = 30    # Helmholtz parameter (kh = 0 would reduce to Laplace)
-ndim = 3     # 2 or 3
+ndim = 2     # 2 or 3
 
 # --------------------------------------------------------------------------------------
 # DEFINE PDE OPERATOR AND GEOMETRY BASED ON DIMENSION
@@ -38,7 +38,7 @@ else:
 if p > 2:
     # HPS requires a vector of half-lengths `a` per dimension
     # For 2D, a might be [width_x/1024, width_y/512], for 3D, similar scale
-    a = np.array([1/32, 1/32, 1/32]) if ndim == 3 else np.array([1/1024, 1/1024])
+    a = np.array([1/32, 1/32, 1/32]) if ndim == 3 else np.array([1/16, 1/16])
 
     tic = time()
     # Build the HPS multidomain solver: this computes per-patch DtN maps and assembles sparse blocks
