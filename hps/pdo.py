@@ -1,13 +1,14 @@
-import jax
-# Enable 64-bit (double) precision globally for JAX computations
-jax.config.update("jax_enable_x64", True)
-
-import jax.numpy as jnp
 import functools
 import numpy as np
 
 
 def const(c=1):
+
+    import jax
+    # Enable 64-bit (double) precision globally for JAX computations
+    jax.config.update("jax_enable_x64", True)
+
+    import jax.numpy as jnp
     """
     Returns a function that produces a constant coefficient c at any set of spatial locations.
 
