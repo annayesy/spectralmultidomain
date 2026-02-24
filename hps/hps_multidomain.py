@@ -64,8 +64,7 @@ def get_leaf_DtNs(pdo, box_geom, a, p, verbose):
                     box_centers[box_ind] = root_loc + a
 
     # Return number of patches per dimension and the LeafSubdomain object
-    return npan_dim, LeafSubdomain(box_centers, pdo, patch_utils, verbose)
-
+    return npan_dim, box_centers, patch_utils
 
 def get_duplicated_interior_points_2d(p, npan_dim):
     """
@@ -224,16 +223,23 @@ class HPSMultidomain(AbstractPDESolver):
 
         # Store basic properties
         self._box_geom = geom.bounds
-        self._geom = geom
-        self._p = p
+        self._geom     = geom
+        self._p        = p
+        self.a         = a
+        self.pdo       = pdo
 
         # Partition domain into leaves and build LeafSubdomain
-        self.npan_dim, self.leaf_subdomains = get_leaf_DtNs(pdo, self._box_geom, a, p, verbose)
+        self.npan_dim, self.box_centers, self.patch_utils = get_leaf_DtNs(pdo, self._box_geom, a, p, verbose)
 
+        if (verbose):
+            print("Ntot=%d, p=%d, ndim=%d, nboxes=%d" % (np.prod(self.npan_dim) * self._p**len(a),\
+                self._p,len(a), np.prod(self.npan_dim)),"with leaf_boxes on ndim = ",self.npan_dim)
+
+        leaf_subdomains = LeafSubdomain(self.box_centers, self.pdo, self.patch_utils,verbose)
         # Retrieve exterior (boundary) and interior coordinates for all leaves
-        xxext_list = self.leaf_subdomains.xxloc_ext  # shape (nbatch, nx_leg, ndim)
-        xxint_list = self.leaf_subdomains.xxloc_int  # shape (nbatch, ni_cheb, ndim)
-        nbatch = self.leaf_subdomains.nbatch
+        xxext_list = leaf_subdomains.xxloc_ext  # shape (nbatch, nx_leg, ndim)
+        xxint_list = leaf_subdomains.xxloc_int  # shape (nbatch, ni_cheb, ndim)
+        nbatch     = leaf_subdomains.nbatch
 
         # Flatten coordinates for global indexing
         self._XX = xxext_list.reshape(xxext_list.shape[0] * xxext_list.shape[1], ndim)
@@ -254,7 +260,7 @@ class HPSMultidomain(AbstractPDESolver):
 
         # Time DtN computation
         tic = time()
-        DtN_list = self.leaf_subdomains.DtN()  # Compute DtN for each leaf
+        DtN_list = leaf_subdomains.DtN()  # Compute DtN for each leaf
         toc_dtn = time() - tic
 
         # Build a block‐diagonal sparse matrix whose blocks are per‐leaf DtN maps
@@ -294,6 +300,9 @@ class HPSMultidomain(AbstractPDESolver):
         self._Axx = A[self._Jx][:, self._Jx]  # boundary→boundary interactions
         self.stats = {'toc_sparse': toc_sparse, 'toc_dtn': toc_dtn}
 
+        if (verbose):
+            print("\t Toc DtN (parallel) %5.2f s, time sparse assembly %5.2f s" % (toc_dtn,toc_sparse))
+
     def solve_dir_full(self, uu_dir, ff_body=None):
         """
         Solve the PDE on the full multidomain:
@@ -315,7 +324,7 @@ class HPSMultidomain(AbstractPDESolver):
         if ff_body is None:
             ff_body = np.zeros((self._XXfull.shape[0], nrhs))
 
-        subdomains = self.leaf_subdomains
+        subdomains = LeafSubdomain(self.box_centers, self.pdo, self.patch_utils)
 
         # Reshape global ff_body into per‐leaf (batch, nt_cheb, nrhs)
         ff_body = ff_body.reshape(subdomains.nbatch, subdomains.nt_cheb, nrhs)

@@ -1,7 +1,9 @@
 import numpy as np
 from abc import ABCMeta, abstractmethod, abstractproperty
-from hps.pdo import get_known_greens
+
+from hps.pdo          import get_known_greens
 from hps.sparse_utils import SparseSolver
+from hps.nd_ordering  import *
 
 class AbstractPDESolver(metaclass=ABCMeta):
     """
@@ -109,9 +111,18 @@ class AbstractPDESolver(metaclass=ABCMeta):
         - solve_op:   Optionally, a pre‐constructed LinearOperator for Aii^{-1}.
         - use_approx: If True and PETSc is available, use an approximate iterative solver.
         """
+
+        if (self.p > 2):
+            perm = get_nd_permutation(self.XX[self.Ji], self.geom.bounds, \
+                self.npan_dim, 2 * self.a, visualize=False)
+
+        else:
+            perm = None
+
         if solve_op is None:
             # Build a new SparseSolver on Aii; solver_Aii property will wrap it
-            self.solve_op = SparseSolver(self.Aii, use_approx=use_approx).solve_op
+            self.solve_op = SparseSolver(self.Aii, \
+                use_approx=use_approx, perm=perm).solve_op
         else:
             self.solve_op = solve_op
 

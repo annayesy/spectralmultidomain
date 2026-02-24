@@ -105,7 +105,7 @@ pdo_mod = param_geom.transform_helmholtz_pdo(bfield_constant, kh)
 # BUILD AND TIME THE HPS MULTIDOMAIN SOLVER ON THE CURVED DOMAIN
 # --------------------------------------------------------------------------------------
 tic    = time()
-solver = HPSMultidomain(pdo_mod, param_geom, a, p)
+solver = HPSMultidomain(pdo_mod, param_geom, a, p,verbose=True)
 toc_dtn = time() - tic
 
 # --------------------------------------------------------------------------------------
@@ -121,9 +121,9 @@ toc_sp = time() - tic
 relerr = solver.verify_discretization(kh)
 
 print(
-    "\t Setup time (DtNs + assembly = %5.2f s, factorization = %5.2f s);"
-    " relerror in 3D curved domain %5.2e"
-    % (toc_dtn, toc_sp, relerr)
+    "\t Factorization time = %5.2f s\n"
+    "\t Relerror in 3D curved domain %5.2e"
+    % (toc_sp, relerr)
 )
 
 fig = plt.figure()

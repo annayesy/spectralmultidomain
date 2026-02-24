@@ -29,7 +29,7 @@ def petscdense_to_nparray(pM):
     return M
 
 
-def setup_ksp(A, use_approx=False):
+def setup_ksp(A, use_approx=False, use_metis=False):
     """
     Set up a PETSc KSP (Krylov solver) or direct solver on sparse matrix A.
 
@@ -43,19 +43,30 @@ def setup_ksp(A, use_approx=False):
     - ksp: PETSc KSP object that can solve linear systems with A
     """
     # Ensure A is in CSR format for building PETSc AIJ matrix
+
     A = A.tocsr()
 
     # Create a new KSP solver
     ksp = PETSc.KSP().create()
     # Wrap A in a PETSc AIJ (sparse) matrix
     pA = PETSc.Mat().createAIJ(A.shape, csr=(A.indptr, A.indices, A.data))
-    ksp.setOperators(pA)
 
     if not use_approx:
         # Direct solve: no Krylov iterations, just factor and solve
         ksp.setType('preonly')
         ksp.getPC().setType('lu')
         ksp.getPC().setFactorSolverType('mumps')
+        ksp.getPC().setFactorOrdering('natural')
+        opts = PETSc.Options()
+        opts["mat_mumps_icntl_7"] = "5"
+
+        if (not use_metis):
+            opts["mat_mumps_icntl_6"] = "0"
+            opts["mat_mumps_icntl_7"] = "0"
+            opts["mat_mumps_icntl_8"] = "0"
+
+        ksp.setOperators(pA)
+        ksp.setFromOptions()
     else:
         # Iterative solve: GMRES + Hypre preconditioner
         ksp.setType('gmres')
@@ -68,8 +79,7 @@ def setup_ksp(A, use_approx=False):
     ksp.setUp()
     return ksp
 
-
-def get_vecsolve(ksp):
+def get_vecsolve(ksp, perm):
     """
     Given a PETSc KSP solver, return a function that solves A x = b for a vector b.
 
@@ -79,6 +89,7 @@ def get_vecsolve(ksp):
     Returns:
     - vecsolve: function taking a NumPy vector b and returning the solution x
     """
+    iperm = np.argsort(perm)
     def vecsolve(b):
         """
         Solve A x = b for a single right-hand side.
@@ -90,7 +101,7 @@ def get_vecsolve(ksp):
         - result: 1D NumPy array, solution x
         """
         # Create PETSc vectors from NumPy arrays
-        pb = PETSc.Vec().createWithArray(b)
+        pb = PETSc.Vec().createWithArray(b[perm])
         px = PETSc.Vec().createWithArray(np.zeros(b.shape))
         # Solve in-place: px = A^{-1} pb
         ksp.solve(pb, px)
@@ -99,12 +110,12 @@ def get_vecsolve(ksp):
         result = px.getArray()
         px.destroy()
         pb.destroy()
-        return result
+        return result[iperm]
 
     return vecsolve
 
 
-def get_matsolve(ksp, use_approx):
+def get_matsolve(ksp, use_approx, perm):
     """
     Given a PETSc KSP solver, return a function that solves A X = B for a dense matrix B.
 
@@ -120,6 +131,8 @@ def get_matsolve(ksp, use_approx):
     Returns:
     - matsolve: function taking a 2D NumPy array B (shape N×M) and returning solution X (N×M)
     """
+    iperm = np.argsort(perm)
+
     def matsolve(B):
         """
         Solve A X = B in a single call using PETSc's matSolve.
@@ -131,7 +144,7 @@ def get_matsolve(ksp, use_approx):
         - result: 2D NumPy array of shape (N, M), solution
         """
         # Wrap B in a PETSc dense matrix
-        pB = PETSc.Mat().createDense([B.shape[0], B.shape[1]], None, B)
+        pB = PETSc.Mat().createDense([B.shape[0], B.shape[1]], None, B[perm])
         # Create an empty PETSc dense matrix for solution
         pX = PETSc.Mat().createDense([B.shape[0], B.shape[1]])
         pX.zeroEntries()
@@ -143,7 +156,7 @@ def get_matsolve(ksp, use_approx):
         # Clean up PETSc matrices
         pX.destroy()
         pB.destroy()
-        return result
+        return result[iperm]
 
     def seq_vec_solve(B):
         """
@@ -155,7 +168,8 @@ def get_matsolve(ksp, use_approx):
         Returns:
         - res: 2D NumPy array of same shape, solutions for each column
         """
-        vec_solve = get_vecsolve(ksp)
+
+        vec_solve = get_vecsolve(ksp,perm)
         res = np.zeros(B.shape)
         for j in range(B.shape[-1]):
             res[:, j] = vec_solve(B[:, j])
@@ -169,7 +183,7 @@ def get_matsolve(ksp, use_approx):
 # SparseSolver: wraps either PETSc KSP solvers or SciPy LU for sparse systems
 # ------------------------------------------------------------------------------------
 class SparseSolver:
-    def __init__(self, A, use_approx=False):
+    def __init__(self, A, use_approx=False, perm=None):
         """
         Initialize a sparse solver for matrix A.
 
@@ -185,15 +199,19 @@ class SparseSolver:
         self.is_symmetric = np.linalg.norm(A @ v - A.T @ v) < 1e-12
         self.N = A.shape[0]
 
-        self.use_petsc = petsc_imported
+        self.use_petsc  = petsc_imported
         self.use_approx = use_approx
+        self.use_metis  = perm is None
+        self.perm       = np.arange(A.shape[0]) if perm is None else perm
+
+        A = A[self.perm][:,self.perm].tocsc()
 
         if self.use_petsc:
             # Build KSP solver on A
-            self.ksp = setup_ksp(A, use_approx)
+            self.ksp = setup_ksp(A, use_approx, use_metis=self.use_metis)
             if not self.is_symmetric:
                 # If A is nonsymmetric, build a separate KSP on A^T for transpose solves
-                self.ksp_adj = setup_ksp(A.T, use_approx)
+                self.ksp_adj = setup_ksp(A.T, use_approx, use_metis=self.use_metis)
         else:
             # Fallback to SciPy’s LU decomposition (CSC format for efficiency)
             self.ksp = splu(A.tocsc())
@@ -224,40 +242,43 @@ class SparseSolver:
             # Symmetric case: matvec and rmatvec are same
             return LinearOperator(
                 shape=(self.N, self.N),
-                matvec=get_vecsolve(self.ksp),
-                rmatvec=get_vecsolve(self.ksp),
-                matmat=get_matsolve(self.ksp, self.use_approx),
-                rmatmat=get_matsolve(self.ksp, self.use_approx)
+                matvec=get_vecsolve(self.ksp,self.perm),
+                rmatvec=get_vecsolve(self.ksp,self.perm),
+                matmat=get_matsolve(self.ksp, self.use_approx,self.perm),
+                rmatmat=get_matsolve(self.ksp, self.use_approx,self.perm)
             )
 
         elif self.use_petsc and not self.is_symmetric:
             # Nonsymmetric: use ksp for matvec, ksp_adj for rmatvec
             return LinearOperator(
                 shape=(self.N, self.N),
-                matvec=get_vecsolve(self.ksp),
-                rmatvec=get_vecsolve(self.ksp_adj),
-                matmat=get_matsolve(self.ksp, self.use_approx),
-                rmatmat=get_matsolve(self.ksp_adj, self.use_approx)
+                matvec=get_vecsolve(self.ksp,self.perm),
+                rmatvec=get_vecsolve(self.ksp_adj,self.perm),
+                matmat=get_matsolve(self.ksp, self.use_approx,self.perm),
+                rmatmat=get_matsolve(self.ksp_adj, self.use_approx,self.perm)
             )
 
         elif not self.use_petsc and self.is_symmetric:
+
+            iperm = np.argsort(self.perm)
             # Use SciPy LU for both matvec and rmatvec (direct symmetric solve)
             return LinearOperator(
                 shape=(self.N, self.N),
-                matvec=lambda x: self.ksp.solve(x),
-                rmatvec=lambda x: self.ksp.solve(x),
-                matmat=lambda X: self.ksp.solve(X),
-                rmatmat=lambda X: self.ksp.solve(X)
+                matvec=lambda x: self.ksp.solve(x[self.perm])[iperm],
+                rmatvec=lambda x: self.ksp.solve(x[self.perm])[iperm],
+                matmat=lambda X: self.ksp.solve(X[self.perm])[iperm],
+                rmatmat=lambda X: self.ksp.solve(X[self.perm])[iperm]
             )
 
         else:
+            iperm = np.argsort(self.perm)
             # SciPy LU for nonsymmetric: use transpose solve for rmatvec
             return LinearOperator(
                 shape=(self.N, self.N),
-                matvec=lambda x: self.ksp.solve(x),
-                rmatvec=lambda x: self.ksp.solve(x, trans='T'),
-                matmat=lambda X: self.ksp.solve(X),
-                rmatmat=lambda X: self.ksp.solve(X, trans='T')
+                matvec=lambda x: self.ksp.solve(x[self.perm])[iperm],
+                rmatvec=lambda x: self.ksp.solve(x[self.perm], trans='T')[iperm],
+                matmat=lambda X: self.ksp.solve(X[self.perm])[iperm],
+                rmatmat=lambda X: self.ksp.solve(X[self.perm], trans='T')[iperm]
             )
 
 
