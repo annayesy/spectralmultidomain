@@ -100,12 +100,12 @@ def assemble_sparse(pdo_op, npoints_dim, XX):
         n0, n1 = npoints_dim
 
         # Second-derivative in x (d0sq) and y (d1sq) with Dirichlet stencil [1, -2, 1] / h^2
-        d0sq = (1 / (h * h)) * diags([1, -2, 1], [-1, 0, 1], shape=(n0, n0), format='csc')
-        d1sq = (1 / (h * h)) * diags([1, -2, 1], [-1, 0, 1], shape=(n1, n1), format='csc')
+        d0sq = (1 / (h * h)) * diags([1.0, -2.0, 1.0], [-1, 0, 1], shape=(n0, n0), format='csc')
+        d1sq = (1 / (h * h)) * diags([1.0, -2.0, 1.0], [-1, 0, 1], shape=(n1, n1), format='csc')
 
         # First-derivative in x (d0) and y (d1) with centered stencil [-1, 0, +1] / (2h)
-        d0 = (1 / (2 * h)) * diags([-1, 0, +1], [-1, 0, 1], shape=(n0, n0), format='csc')
-        d1 = (1 / (2 * h)) * diags([-1, 0, +1], [-1, 0, 1], shape=(n1, n1), format='csc')
+        d0 = (1 / (2 * h)) * diags([-1.0, 0.0, 1.0], [-1, 0, 1], shape=(n0, n0), format='csc')
+        d1 = (1 / (2 * h)) * diags([-1.0, 0.0, 1.0], [-1, 0, 1], shape=(n1, n1), format='csc')
 
         # Kronecker products to lift 1D to 2D: 
         #    D00 approximates ∂²/∂x² over 2D grid, D11 approximates ∂²/∂y²
@@ -153,9 +153,9 @@ def assemble_sparse(pdo_op, npoints_dim, XX):
         n0, n1, n2 = npoints_dim
 
         # 1D second-derivative matrices in x, y, z
-        d0sq = (1 / (h * h)) * diags([1, -2, 1], [-1, 0, 1], shape=(n0, n0), format='csc')
-        d1sq = (1 / (h * h)) * diags([1, -2, 1], [-1, 0, 1], shape=(n1, n1), format='csc')
-        d2sq = (1 / (h * h)) * diags([1, -2, 1], [-1, 0, 1], shape=(n2, n2), format='csc')
+        d0sq = (1 / (h * h)) * diags([1.0, -2.0, 1.0], [-1, 0, 1], shape=(n0, n0), format='csc')
+        d1sq = (1 / (h * h)) * diags([1.0, -2.0, 1.0], [-1, 0, 1], shape=(n1, n1), format='csc')
+        d2sq = (1 / (h * h)) * diags([1.0, -2.0, 1.0], [-1, 0, 1], shape=(n2, n2), format='csc')
 
         # Lift 1D to 3D via Kron: 
         # D00 = ∂²/∂x² ⊗ I_y ⊗ I_z, D11 = I_x ⊗ ∂²/∂y² ⊗ I_z, D22 = I_x ⊗ I_y ⊗ ∂²/∂z²
